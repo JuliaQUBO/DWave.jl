@@ -1,12 +1,39 @@
 # DWave.jl
-Wrapper for the D-Wave Quantum API (ft. [Anneal.jl](https://github.com/psrenergy/Anneal.jl))
+D-Wave Quantum Annealing Interface for JuMP (ft. [Anneal.jl](https://github.com/psrenergy/Anneal.jl))
 
 ## Installation
 ```julia
 julia> import Pkg
 
-julia> Pkg.add(url="https://github.com/psrenergy/DWave.jl#main")
+julia> Pkg.add(url="https://github.com/psrenergy/DWave.jl")
 ```
+
+## Basic Usage
+```julia
+using JuMP
+using Anneal
+using DWave
+
+model = Model(DWave.Optimizer)
+
+h = [-1, -1, -1]
+J = [0 2 2; 0 0 2; 0 0 0]
+
+@variable(model, s[1:3], Spin)
+
+@objective(model, Min, s'J * s + h's)
+
+optimize!(model)
+
+for i = 1:result_count(model)
+    si = value.(s; result=i)
+    yi = objective_value(model; result=i)
+    println("H($si) = $yi")
+end
+```
+
+## API Token
+To use D-Wave's QPU it is necessary to obtain an API Token from [Leap](https://cloud.dwavesys.com/leap/).
 
 **Disclaimer:** _The D-Wave wrapper for Julia is not officially supported by D-Wave Systems. If you are a commercial customer interested in official support for Julia from D-Wave, let them know!_
 
