@@ -4,4 +4,4 @@ channels = ["anaconda", "conda-forge"]
 python = ">=3.7,<4"
 
 [pip.deps]
-dwave-system = ">=1.15"
+dwave-ocean-sdk = ">=1.15"
