@@ -1,13 +1,13 @@
 name = "DWave"
 uuid = "4d534982-bf11-4157-9e48-fe3a62208a50"
 authors = ["Pedro Maciel Xavier <pedroxavier@psr-inc.com>"]
-version = "0.1.0"
+version = "0.1.1"
 
 [deps]
 Anneal = "e4d9eb7f-b088-426e-aeb5-1c0dae3d8abb"
 PythonCall = "6099a3de-0909-46bc-b1f4-468b9a2dfc0d"
 
 [compat]
-Anneal = "0.4"
-PythonCall = "= 0.9.7"
+Anneal = "0.5"
+PythonCall = "= 0.9"
 julia = "1.6"

@@ -15,10 +15,10 @@ function __init__()
 end
 
 Anneal.@anew Optimizer begin
-    name = "D-Wave"
-    sense = :min
-    domain = :spin
-    version = v"0.1.0"
+    name       = "D-Wave"
+    sense      = :min
+    domain     = :spin
+    version    = v"0.1.0"
     attributes = begin
         "num_reads"::Integer = 100
     end
