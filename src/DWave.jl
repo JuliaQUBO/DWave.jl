@@ -9,9 +9,22 @@ const dwave_cloud = PythonCall.pynew()
 const dwave_embedding = PythonCall.pynew()
 
 function __init__()
+    # -*- Python Packages -*- #
     PythonCall.pycopy!(dwave_dimod, pyimport("dimod"))
     PythonCall.pycopy!(dwave_cloud, pyimport("dwave.cloud"))
     PythonCall.pycopy!(dwave_embedding, pyimport("dwave.embedding"))
+
+    # -*- D-Wave API Credentials -*- #
+    DWAVE_API_TOKEN = get(ENV, "DWAVE_API_TOKEN", nothing)
+
+    if isnothing(DWAVE_API_TOKEN)
+        @warn """
+        The 'DWAVE_API_TOKEN' environment variable is not defined. Please, make sure that another access method is available.
+        
+        For more information visit:
+            https://docs.ocean.dwavesys.com/en/stable/overview/sapi.html
+        """
+    end
 end
 
 Anneal.@anew Optimizer begin
@@ -26,7 +39,7 @@ end
 
 function Anneal.sample(sampler::Optimizer{T}) where {T}
     # Ising Model
-    h, J, α, β = Anneal.ising(Dict, T, sampler)
+    h, J, α, β = Anneal.ising(sampler, Dict, T)
 
     # D-Wave's BQM
     bqm = DWave.dwave_dimod.BinaryQuadraticModel.from_ising(h, J)
@@ -38,7 +51,7 @@ function Anneal.sample(sampler::Optimizer{T}) where {T}
     time_data = Dict{String,Any}()
 
     # Results vector
-    samples = Anneal.Sample{Int,T}[]
+    samples = Anneal.Sample{T,Int}[]
 
     connect() do client
         solver = client.get_solver()
@@ -50,13 +63,13 @@ function Anneal.sample(sampler::Optimizer{T}) where {T}
         record = unembed(future.sampleset, χ, bqm).record
 
         for (ψ, e, k) in record
-            sample = Anneal.Sample{Int,T}(
+            sample = Anneal.Sample{T}(
                 # state:
                 pyconvert.(Int, ψ),
-                # reads:
-                pyconvert(Int, k),
                 # value: 
                 α * (pyconvert(T, e) + β),
+                # reads:
+                pyconvert(Int, k),
             )
 
             push!(samples, sample)
@@ -68,11 +81,11 @@ function Anneal.sample(sampler::Optimizer{T}) where {T}
     end
 
     metadata = Dict{String,Any}(
-        "time" => time_data,
+        "time"   => time_data,
         "origin" => "D-Wave",
     )
 
-    return Anneal.SampleSet{Int,T}(samples, metadata)
+    return Anneal.SampleSet{T}(samples, metadata)
 end
 
 function connect(callback)

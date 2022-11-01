@@ -1,7 +1,7 @@
 channels = ["anaconda", "conda-forge"]
 
 [deps]
-python = ">=3.7,<4"
+python = ">=3.7,<=3.8"
 
 [pip.deps]
-dwave-ocean-sdk = ">=1.15"
+dwave-ocean-sdk = "==6.0.0"
