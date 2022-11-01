@@ -1,7 +1,7 @@
 name    = "DWave"
 uuid    = "4d534982-bf11-4157-9e48-fe3a62208a50"
 authors = ["pedromxavier <pedroxavier@psr-inc.com>", "pedroripper <pedroripper@psr-inc.com>"]
-version = "0.1.1"
+version = "0.1.2"
 
 [deps]
 Anneal     = "e4d9eb7f-b088-426e-aeb5-1c0dae3d8abb"
