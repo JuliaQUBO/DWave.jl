@@ -31,9 +31,10 @@ Anneal.@anew Optimizer begin
     name       = "D-Wave"
     sense      = :min
     domain     = :spin
-    version    = v"0.1.0"
+    version    = v"6.0.0" # dwave-ocean-sdk version
     attributes = begin
-        "num_reads"::Integer = 100
+        NumberOfReads["num_reads"]::Integer   = 100
+        DWaveBackend["dwave_backend"]::String = "DW_2000Q_6"
     end
 end
 
@@ -45,7 +46,8 @@ function Anneal.sample(sampler::Optimizer{T}) where {T}
     bqm = DWave.dwave_dimod.BinaryQuadraticModel.from_ising(h, J)
 
     # Attributes
-    num_reads = MOI.get(sampler, MOI.RawOptimizerAttribute("num_reads"))
+    num_reads     = MOI.get(sampler, DWave.NumberOfReads())
+    dwave_backend = MOI.get(sampler, DWave.DWaveBackend())
 
     # -*- Timing Information -*- #
     time_data = Dict{String,Any}()
@@ -54,7 +56,7 @@ function Anneal.sample(sampler::Optimizer{T}) where {T}
     samples = Anneal.Sample{T,Int}[]
 
     connect() do client
-        solver = client.get_solver()
+        solver = client.get_solver(dwave_backend)
         
         χ, hχ, Jχ = embed(solver, h, J)
 
@@ -82,7 +84,7 @@ function Anneal.sample(sampler::Optimizer{T}) where {T}
 
     metadata = Dict{String,Any}(
         "time"   => time_data,
-        "origin" => "D-Wave",
+        "origin" => "D-Wave @ $(dwave_backend)",
     )
 
     return Anneal.SampleSet{T}(samples, metadata)
@@ -98,18 +100,22 @@ function connect(callback)
     finally
         client.close()
     end
+
+    return nothing
 end
 
 function embed(solver, h::Dict{Int,T}, J::Dict{Tuple{Int,Int},T}) where {T}
-    χ = DWave.dwave_embedding.minorminer.find_embedding(
-        keys(J),
-        solver.edges
-    )
+    H = keys(J)
+    G = solver.edges
+    V = pyconvert.(Int, solver.nodes)
 
-    A = Dict{Int, Vector{Int}}(v => Int[] for v in pyconvert.(Int, solver.nodes))
+    χ = DWave.dwave_embedding.minorminer.find_embedding(H, G)
 
-    for e in solver.edges
-        u, v = pyconvert.(Int, e)
+    A = Dict{Int, Vector{Int}}(v => Int[] for v in V)
+
+    for g in G
+        u, v = pyconvert.(Int, g)
+
         push!(A[u], v)
         push!(A[v], u)
     end
