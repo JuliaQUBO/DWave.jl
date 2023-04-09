@@ -1,4 +1,3 @@
-using Test
-using DWave
+using DWave: MOI, DWave, QUBODrivers
 
-DWave.test(; examples=true)
+QUBODrivers.test(DWave.Optimizer; examples = false)

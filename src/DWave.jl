@@ -1,7 +1,15 @@
 module DWave
 
-using Anneal
 using PythonCall
+import QUBODrivers:
+    MOI,
+    QUBODrivers,
+    QUBOTools,
+    Sample,
+    SampleSet,
+    @setup,
+    sample,
+    ising
 
 # -*- :: Python D-Wave Module :: -*- #
 const dwave_dimod = PythonCall.pynew()
@@ -9,12 +17,12 @@ const dwave_cloud = PythonCall.pynew()
 const dwave_embedding = PythonCall.pynew()
 
 function __init__()
-    # -*- Python Packages -*- #
+    # Python Packages
     PythonCall.pycopy!(dwave_dimod, pyimport("dimod"))
     PythonCall.pycopy!(dwave_cloud, pyimport("dwave.cloud"))
     PythonCall.pycopy!(dwave_embedding, pyimport("dwave.embedding"))
 
-    # -*- D-Wave API Credentials -*- #
+    # D-Wave API Credentials
     DWAVE_API_TOKEN = get(ENV, "DWAVE_API_TOKEN", nothing)
 
     if isnothing(DWAVE_API_TOKEN)
@@ -27,7 +35,7 @@ function __init__()
     end
 end
 
-Anneal.@anew Optimizer begin
+@setup Optimizer begin
     name       = "D-Wave"
     sense      = :min
     domain     = :spin
@@ -38,22 +46,25 @@ Anneal.@anew Optimizer begin
     end
 end
 
-function Anneal.sample(sampler::Optimizer{T}) where {T}
+function sample(sampler::Optimizer{T}) where {T}
     # Ising Model
-    h, J, α, β = Anneal.ising(sampler, Dict, T)
+    h, J, α, β = ising(sampler, Dict, T)
 
     # D-Wave's BQM
-    bqm = DWave.dwave_dimod.BinaryQuadraticModel.from_ising(h, J)
+    bqm = dwave_dimod.BinaryQuadraticModel.from_ising(h, J)
 
     # Attributes
     num_reads     = MOI.get(sampler, DWave.NumberOfReads())
     dwave_backend = MOI.get(sampler, DWave.DWaveBackend())
 
-    # -*- Timing Information -*- #
-    time_data = Dict{String,Any}()
+    # Extra Information
+    metadata = Dict{String,Any}(
+        "time"   => Dict{String,Any}(),
+        "origin" => "D-Wave @ $(dwave_backend)",
+    )
 
     # Results vector
-    samples = Anneal.Sample{T,Int}[]
+    samples = Sample{T,Int}[]
 
     connect() do client
         solver = client.get_solver(dwave_backend)
@@ -65,7 +76,7 @@ function Anneal.sample(sampler::Optimizer{T}) where {T}
         record = unembed(future.sampleset, χ, bqm).record
 
         for (ψ, e, k) in record
-            sample = Anneal.Sample{T}(
+            sample = Sample{T}(
                 # state:
                 pyconvert.(Int, ψ),
                 # value: 
@@ -77,17 +88,12 @@ function Anneal.sample(sampler::Optimizer{T}) where {T}
             push!(samples, sample)
         end
 
-        time_data["effective"] = result.time
+        metadata["time"]["effective"] = result.time
 
         return nothing
     end
 
-    metadata = Dict{String,Any}(
-        "time"   => time_data,
-        "origin" => "D-Wave @ $(dwave_backend)",
-    )
-
-    return Anneal.SampleSet{T}(samples, metadata)
+    return SampleSet{T}(samples, metadata)
 end
 
 function connect(callback)
@@ -109,7 +115,7 @@ function embed(solver, h::Dict{Int,T}, J::Dict{Tuple{Int,Int},T}) where {T}
     G = solver.edges
     V = pyconvert.(Int, solver.nodes)
 
-    χ = DWave.dwave_embedding.minorminer.find_embedding(H, G)
+    χ = dwave_embedding.minorminer.find_embedding(H, G)
 
     A = Dict{Int, Vector{Int}}(v => Int[] for v in V)
 
@@ -120,7 +126,7 @@ function embed(solver, h::Dict{Int,T}, J::Dict{Tuple{Int,Int},T}) where {T}
         push!(A[v], u)
     end
 
-    hχ, Jχ = DWave.dwave_embedding.embed_ising(h, J, χ, A)
+    hχ, Jχ = dwave_embedding.embed_ising(h, J, χ, A)
 
     return (χ, hχ, Jχ)
 end

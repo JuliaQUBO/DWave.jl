@@ -1,17 +1,19 @@
 # DWave.jl
-D-Wave Quantum Annealing Interface for JuMP (ft. [Anneal.jl](https://github.com/psrenergy/Anneal.jl))
+[![QUBODRIVERS](https://img.shields.io/badge/Powered%20by-QUBODrivers.jl-%20%234063d8)](https://github.com/psrenergy/QUBODrivers.jl)
+
+D-Wave Quantum Annealing Interface for JuMP
 
 ## Installation
 ```julia
 julia> import Pkg
 
-julia> Pkg.add(url="https://github.com/psrenergy/DWave.jl")
+julia> Pkg.add("DWave.jl")
 ```
 
 ## Basic Usage
 ```julia
 using JuMP
-using Anneal
+using QUBODrivers
 using DWave
 
 model = Model(DWave.Optimizer)
@@ -19,15 +21,16 @@ model = Model(DWave.Optimizer)
 h = [-1, -1, -1]
 J = [0 2 2; 0 0 2; 0 0 0]
 
-@variable(model, s[1:3], Spin)
+@variable(model, s[1:3] in Spin)
 
-@objective(model, Min, s'J * s + h's)
+@objective(model, Min, h's + s'J * s)
 
 optimize!(model)
 
 for i = 1:result_count(model)
     si = value.(s; result=i)
     yi = objective_value(model; result=i)
+
     println("H($si) = $yi")
 end
 ```
