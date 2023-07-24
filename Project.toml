@@ -4,7 +4,7 @@ authors = [
     "pedromxavier <pedroxavier@psr-inc.com>",
     "pedroripper <pedroripper@psr-inc.com>",
 ]
-version = "0.3.0"
+version = "0.3.1"
 
 [deps]
 PythonCall  = "6099a3de-0909-46bc-b1f4-468b9a2dfc0d"
