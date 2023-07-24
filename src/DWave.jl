@@ -1,6 +1,7 @@
 module DWave
 
 using PythonCall
+
 import QUBODrivers:
     MOI,
     QUBODrivers,
@@ -14,12 +15,16 @@ import QUBODrivers:
 # -*- :: Python D-Wave Module :: -*- #
 const dwave_dimod = PythonCall.pynew()
 const dwave_cloud = PythonCall.pynew()
+const dwave_system = PythonCall.pynew()
+const dwave_networkx = PythonCall.pynew()
 const dwave_embedding = PythonCall.pynew()
 
 function __init__()
     # Python Packages
     PythonCall.pycopy!(dwave_dimod, pyimport("dimod"))
     PythonCall.pycopy!(dwave_cloud, pyimport("dwave.cloud"))
+    PythonCall.pycopy!(dwave_system, pyimport("dwave.system"))
+    PythonCall.pycopy!(dwave_networkx, pyimport("dwave_networkx"))
     PythonCall.pycopy!(dwave_embedding, pyimport("dwave.embedding"))
 
     # D-Wave API Credentials
@@ -39,100 +44,54 @@ end
     name       = "D-Wave"
     sense      = :min
     domain     = :spin
-    version    = v"6.0.0" # dwave-ocean-sdk version
+    version    = v"6.4.1" # dwave-ocean-sdk version
     attributes = begin
-        NumberOfReads["num_reads"]::Integer   = 100
-        DWaveBackend["dwave_backend"]::String = "DW_2000Q_6"
+        NumberOfReads["num_reads"]::Integer = 100
+        Sampler["sampler"]::Any             = nothing
     end
 end
 
 function sample(sampler::Optimizer{T}) where {T}
     # Ising Model
-    h, J, α, β = ising(sampler, Dict, T)
-
-    # D-Wave's BQM
-    bqm = dwave_dimod.BinaryQuadraticModel.from_ising(h, J)
+    h, J, α, β = ising(sampler, Dict)
 
     # Attributes
     num_reads     = MOI.get(sampler, DWave.NumberOfReads())
-    dwave_backend = MOI.get(sampler, DWave.DWaveBackend())
+    dwave_sampler = MOI.get(sampler, DWave.Sampler())
+
+    if dwave_sampler === nothing
+        dwave_sampler = dwave_system.EmbeddingComposite(
+            dwave_system.DWaveSampler()
+        )
+    end
 
     # Extra Information
     metadata = Dict{String,Any}(
         "time"   => Dict{String,Any}(),
-        "origin" => "D-Wave @ $(dwave_backend)",
+        "origin" => "D-Wave",
     )
 
     # Results vector
     samples = Sample{T,Int}[]
 
-    connect() do client
-        solver = client.get_solver(dwave_backend)
-        
-        χ, hχ, Jχ = embed(solver, h, J)
+    result = @timed dwave_sampler.sample_ising(h, J; num_reads=num_reads)
 
-        result = @timed solver.sample_ising(hχ, Jχ; num_reads=num_reads)
-        future = result.value
-        record = unembed(future.sampleset, χ, bqm).record
+    for (ψ, e, k) in result.value.record
+        sample = Sample{T}(
+            # state:
+            pyconvert.(Int, ψ),
+            # value: 
+            α * (pyconvert(T, e) + β),
+            # reads:
+            pyconvert(Int, k),
+        )
 
-        for (ψ, e, k) in record
-            sample = Sample{T}(
-                # state:
-                pyconvert.(Int, ψ),
-                # value: 
-                α * (pyconvert(T, e) + β),
-                # reads:
-                pyconvert(Int, k),
-            )
-
-            push!(samples, sample)
-        end
-
-        metadata["time"]["effective"] = result.time
-
-        return nothing
+        push!(samples, sample)
     end
+
+    metadata["time"]["effective"] = result.time
 
     return SampleSet{T}(samples, metadata)
-end
-
-function connect(callback)
-    client = dwave_cloud.Client.from_config()
-
-    try
-        callback(client)
-    catch e
-        rethrow(e)
-    finally
-        client.close()
-    end
-
-    return nothing
-end
-
-function embed(solver, h::Dict{Int,T}, J::Dict{Tuple{Int,Int},T}) where {T}
-    H = keys(J)
-    G = solver.edges
-    V = pyconvert.(Int, solver.nodes)
-
-    χ = dwave_embedding.minorminer.find_embedding(H, G)
-
-    A = Dict{Int, Vector{Int}}(v => Int[] for v in V)
-
-    for g in G
-        u, v = pyconvert.(Int, g)
-
-        push!(A[u], v)
-        push!(A[v], u)
-    end
-
-    hχ, Jχ = dwave_embedding.embed_ising(h, J, χ, A)
-
-    return (χ, hχ, Jχ)
-end
-
-function unembed(sampleset, χ, bqm)
-    return DWave.dwave_embedding.unembed_sampleset(sampleset, χ, bqm)
 end
 
 end # module
