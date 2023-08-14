@@ -57,6 +57,8 @@ function sample(sampler::Optimizer{T}) where {T}
     # Ising Model
     h, J, α, β = ising(sampler, Dict)
 
+    n = MOI.get(sampler, MOI.NumberOfVariables())
+
     # Attributes
     num_reads     = MOI.get(sampler, DWave.NumberOfReads())
     dwave_sampler = MOI.get(sampler, DWave.Sampler())
@@ -78,13 +80,25 @@ function sample(sampler::Optimizer{T}) where {T}
     # Results vector
     samples = Sample{T,Int}[]
 
-    result = @timed dwave_sampler.sample_ising(h, J; num_reads=num_reads)
+    results = @timed dwave_sampler.sample_ising(h, J; num_reads=num_reads)
+    var_map = pyconvert.(Int, results.value.variables)
 
-    for (ψ, λ, r) in result.value.record
-        sample = Sample{T}(
+    for (ϕ, λ, r) in results.value.record
+        # the dwave sampler will not consider variables that are not
+        # present in the objective funcion, leading to holes with
+        # respect to the indices in the record table.
+        # Therefore, it is necessary to introduce an extra layer of
+        # indirection to account for the missing variables.
+        ψ = zeros(Int, n)
+
+        for (i, v) in enumerate(ϕ)
+            ψ[var_map[i]] = pyconvert(Int, v)
+        end
+
+        sample = Sample{T,Int}(
             # state:
-            pyconvert.(Int, ψ),
-            # value: 
+            ψ,
+            # energy:
             α * (pyconvert(T, λ) + β),
             # reads:
             pyconvert(Int, r),
@@ -93,7 +107,9 @@ function sample(sampler::Optimizer{T}) where {T}
         push!(samples, sample)
     end
 
-    metadata["time"]["effective"] = result.time
+    metadata["dwave_info"] = results.value.info
+
+    metadata["time"]["effective"] = results.time
 
     return SampleSet{T}(samples, metadata)
 end

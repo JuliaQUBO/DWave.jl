@@ -1,10 +1,10 @@
 channels = ["anaconda", "conda-forge"]
 
 [deps]
-python = ">=3.7,<=3.10"
+python = ">=3.7,<=3.11"
 
 [pip.deps]
-numpy           = "==1.25.0"
-matplotlib      = "==3.7.0"
+numpy           = ">=1.20"
+matplotlib      = ">=3.5"
 dwave-ocean-sdk = "==6.4.1"
 dwave_networkx  = "==0.8.14"
