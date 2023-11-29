@@ -7,8 +7,9 @@ QUBODrivers.@setup Optimizer begin
     name       = "D-Wave Quantum Annealing Sampler"
     version    = v"6.4.1" # dwave-ocean-sdk version
     attributes = begin
-        NumberOfReads["num_reads"]::Integer = 100
-        Sampler["sampler"]::Any             = nothing
+        NumberOfReads["num_reads"]::Integer       = 100
+        Sampler["sampler"]::Any                   = nothing
+        ReturnEmbedding["return_embedding"]::Bool = false
     end
 end
 
@@ -17,7 +18,9 @@ function QUBODrivers.sample(sampler::Optimizer{T}) where {T}
     n, h, J, α, β = QUBOTools.ising(sampler, :dict; sense = :min)
 
     # Attributes
-    num_reads     = MOI.get(sampler, DWave.NumberOfReads())
+    sample_params = Dict{Symbol,Any}(
+        :num_reads => MOI.get(sampler, DWave.NumberOfReads()),
+    )
     dwave_sampler = MOI.get(sampler, DWave.Sampler())
 
     if dwave_sampler === nothing
@@ -26,12 +29,14 @@ function QUBODrivers.sample(sampler::Optimizer{T}) where {T}
                 token = get(ENV, "DWAVE_API_TOKEN", nothing)
             )
         )
+
+        sample_params[:return_embedding] = MOI.get(sampler, DWave.ReturnEmbedding())
     end
 
     # Results vector
     samples = QUBOTools.Sample{T,Int}[]
 
-    results = @timed dwave_sampler.sample_ising(h, J; num_reads=num_reads)
+    results = @timed dwave_sampler.sample_ising(h, J; sample_params...)
     var_map = pyconvert.(Int, results.value.variables)
 
     for (ϕ, λ, r) in results.value.record
