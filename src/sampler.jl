@@ -69,7 +69,7 @@ function QUBODrivers.sample(sampler::Optimizer{T}) where {T}
         "time"   => Dict{String,Any}( #
             "effective" => results.time,
         ),
-        "dwave_info" => results.value.info
+        "dwave_info" => jl_object(results.value.info)
     )
 
     return QUBOTools.SampleSet{T,Int}(samples, metadata; sense = :min, domain = :spin)

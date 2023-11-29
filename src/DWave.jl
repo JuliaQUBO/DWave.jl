@@ -1,6 +1,7 @@
 module DWave
 
 import Graphs
+import JSON
 import QUBOTools
 import QUBODrivers
 import MathOptInterface as MOI
@@ -9,6 +10,7 @@ using PythonCall
 
 # -*- :: Python D-Wave Module :: -*- #
 const np              = PythonCall.pynew()
+const json            = PythonCall.pynew()
 const dwave_cloud     = PythonCall.pynew()
 const dwave_dimod     = PythonCall.pynew()
 const dwave_embedding = PythonCall.pynew()
@@ -33,6 +35,7 @@ end
 function __init__()
     # Python Packages
     PythonCall.pycopy!(np, pyimport("numpy"))
+    PythonCall.pycopy!(json, pyimport("json"))
     PythonCall.pycopy!(dwave_cloud, pyimport("dwave.cloud"))
     PythonCall.pycopy!(dwave_dimod, pyimport("dimod"))
     PythonCall.pycopy!(dwave_embedding, pyimport("dwave.embedding"))
@@ -42,6 +45,13 @@ function __init__()
     __auth__()
 
     return nothing
+end
+
+function jl_object(py_obj)
+    # Convert Python object to JSON string, then parse it into a Julia object
+    data = pyconvert(String, json.dumps(py_obj))
+
+    return JSON.parse(data)
 end
 
 include("sampler.jl")
