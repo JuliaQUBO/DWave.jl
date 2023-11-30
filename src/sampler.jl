@@ -5,11 +5,12 @@ D-Wave's Quantum Annealing Sampler for QUBO and Ising models.
 """
 QUBODrivers.@setup Optimizer begin
     name       = "D-Wave Quantum Annealing Sampler"
-    version    = v"6.4.1" # dwave-ocean-sdk version
+    version    = v"6.7.0" # dwave-ocean-sdk version
     attributes = begin
         NumberOfReads["num_reads"]::Integer       = 100
         Sampler["sampler"]::Any                   = nothing
         ReturnEmbedding["return_embedding"]::Bool = false
+        AnnealingTime["annealing_time"]::Float64  = 20.0
     end
 end
 
@@ -19,7 +20,8 @@ function QUBODrivers.sample(sampler::Optimizer{T}) where {T}
 
     # Attributes
     sample_params = Dict{Symbol,Any}(
-        :num_reads => MOI.get(sampler, DWave.NumberOfReads()),
+        :num_reads      => MOI.get(sampler, DWave.NumberOfReads()),
+        :annealing_time => MOI.get(sampler, DWave.AnnealingTime()),
     )
     dwave_sampler = MOI.get(sampler, DWave.Sampler())
 
@@ -33,9 +35,8 @@ function QUBODrivers.sample(sampler::Optimizer{T}) where {T}
         sample_params[:return_embedding] = MOI.get(sampler, DWave.ReturnEmbedding())
     end
 
-    # Results vector
+    # Results
     samples = QUBOTools.Sample{T,Int}[]
-
     results = @timed dwave_sampler.sample_ising(h, J; sample_params...)
     var_map = pyconvert.(Int, results.value.variables)
     dw_info = jl_object(results.value.info)
