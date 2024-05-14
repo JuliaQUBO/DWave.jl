@@ -1,7 +1,8 @@
 module Neal
 
-import QUBOTools
-import QUBODrivers
+import QUBO
+QUBODrivers = QUBO.QUBODrivers
+QUBOTools = QUBO.QUBOTools
 import MathOptInterface as MOI
 
 using PythonCall
@@ -57,7 +58,7 @@ function QUBODrivers.sample(sampler::Optimizer{T}) where {T}
 
     # Format Samples
     samples = QUBOTools.Sample{T,Int}[]
-    var_map = pyconvert.(Int, results.value.variables)
+    var_map = pyconvert.(Int, [var for var in results.value.variables])
 
     for (ϕ, λ, r) in results.value.record
         # the dwave sampler will not consider variables that are not
