@@ -2,9 +2,10 @@ module DWave
 
 import Graphs
 import JSON
-import QUBOTools
-import QUBODrivers
 import MathOptInterface as MOI
+import QUBO
+QUBODrivers = QUBO.QUBODrivers
+QUBOTools = QUBO.QUBOTools
 
 using PythonCall
 

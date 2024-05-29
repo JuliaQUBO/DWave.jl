@@ -13,10 +13,10 @@ julia> Pkg.add("DWave.jl")
 ## Basic Usage
 ```julia
 using JuMP
-using QUBODrivers
+using QUBO
 using DWave
 
-model = Model(DWave.Optimizer)
+model = Model(DWave.Neal.Optimizer)
 
 h = [-1, -1, -1]
 J = [0 2 2; 0 0 2; 0 0 0]

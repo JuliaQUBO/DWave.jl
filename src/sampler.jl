@@ -38,7 +38,7 @@ function QUBODrivers.sample(sampler::Optimizer{T}) where {T}
     # Results
     samples = QUBOTools.Sample{T,Int}[]
     results = @timed dwave_sampler.sample_ising(h, J; sample_params...)
-    var_map = pyconvert.(Int, results.value.variables)
+    var_map = pyconvert.(Int, [var for var in results.value.variables])
     dw_info = jl_object(results.value.info)
 
     for (ϕ, λ, r) in results.value.record
