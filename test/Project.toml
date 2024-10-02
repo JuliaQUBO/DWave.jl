@@ -1,2 +1,3 @@
 [deps]
-Test = "8dfed614-e22c-5e08-85e1-65c5234f0b40"
+QUBODrivers = "a3f166f7-2cd3-47b6-9e1e-6fbfe0449eb0"
+Test        = "8dfed614-e22c-5e08-85e1-65c5234f0b40"
