@@ -7,7 +7,7 @@ D-Wave Quantum Annealing Interface for JuMP
 ```julia
 julia> import Pkg
 
-julia> Pkg.add("DWave.jl")
+julia> Pkg.add("DWave")
 ```
 
 ## Basic Usage
