@@ -24,7 +24,25 @@ function __auth__(; verbose :: Bool = false)
     if haskey(ENV, "DWAVE_API_TOKEN")
         API_TOKEN[] = ENV["DWAVE_API_TOKEN"]
 
-        return true
+        let client = dwave_cloud.Client(; token = API_TOKEN[])
+            try
+                client.get_solver()
+            catch e
+                API_TOKEN[] = nothing
+
+                if verbose
+                    @warn """
+                    The 'DWAVE_API_TOKEN' environment variable defined, but the token is not valid.
+                    If you want to use D-Wave's cloud services, please make sure that another access method is available.
+                    
+                    For more information visit:
+                        https://docs.ocean.dwavesys.com/en/stable/overview/sapi.html
+                    """
+                end
+            end
+        end
+
+        return !isnothing(API_TOKEN[])
     else
         if verbose
             @warn """
