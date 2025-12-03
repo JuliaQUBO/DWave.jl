@@ -7,10 +7,10 @@ import MathOptInterface as MOI
 using PythonCall
 
 # -*- :: Python D-Wave Simulated Annealing :: -*- #
-const neal = PythonCall.pynew() # initially NULL
+const dwave_samplers = PythonCall.pynew() # initially NULL
 
 function __init__()
-    PythonCall.pycopy!(neal, pyimport("neal"))
+    PythonCall.pycopy!(dwave_samplers, pyimport("dwave.samplers"))
 end
 
 @doc raw"""
@@ -20,7 +20,7 @@ D-Wave's Simulated Annealing Sampler for QUBO and Ising models.
 """
 QUBODrivers.@setup Optimizer begin
     name       = "D-Wave Neal Simulated Annealing Sampler"
-    version    = v"6.7.0" # dwave-ocean-sdk version
+    version    = v"8.4.0" # dwave-ocean-sdk version
     attributes = begin
         "num_reads"::Integer = 1_000
         "num_sweeps"::Integer = 1_000
@@ -52,7 +52,7 @@ function QUBODrivers.sample(sampler::Optimizer{T}) where {T}
     )
 
     # Call D-Wave Neal API
-    sampler = neal.SimulatedAnnealingSampler()
+    sampler = dwave_samplers.SimulatedAnnealingSampler()
     results = @timed sampler.sample_ising(h, J; params...)
 
     # Format Samples

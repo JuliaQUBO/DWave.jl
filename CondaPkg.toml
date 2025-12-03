@@ -1,9 +1,9 @@
 channels = ["anaconda", "conda-forge"]
 
 [deps]
-python = ">=3.7,<=3.11"
+python = ">=3.9,<=3.13"
 
 [pip.deps]
-numpy           = ">=1.20"
-dwave-ocean-sdk = "==6.7.0"
-dwave_networkx  = "==0.8.14"
+numpy           = ">=2.0"
+dwave-ocean-sdk = "==8.4.0"
+dwave_networkx  = "==0.8.18"

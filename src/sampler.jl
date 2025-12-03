@@ -5,7 +5,7 @@ D-Wave's Quantum Annealing Sampler for QUBO and Ising models.
 """
 QUBODrivers.@setup Optimizer begin
     name       = "D-Wave Quantum Annealing Sampler"
-    version    = v"6.7.0" # dwave-ocean-sdk version
+    version    = v"8.4.0" # dwave-ocean-sdk version
     attributes = begin
         NumberOfReads["num_reads"]::Integer       = 100
         Sampler["sampler"]::Any                   = nothing
