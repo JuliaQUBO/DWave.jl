@@ -10,7 +10,8 @@ using PythonCall
 const neal = PythonCall.pynew() # initially NULL
 
 function __init__()
-    PythonCall.pycopy!(neal, pyimport("neal"))
+    # Note: 'neal' package was deprecated and replaced by 'dwave.samplers' in dwave-ocean-sdk 8.0+
+    PythonCall.pycopy!(neal, pyimport("dwave.samplers"))
 end
 
 @doc raw"""
@@ -20,7 +21,7 @@ D-Wave's Simulated Annealing Sampler for QUBO and Ising models.
 """
 QUBODrivers.@setup Optimizer begin
     name       = "D-Wave Neal Simulated Annealing Sampler"
-    version    = v"6.7.0" # dwave-ocean-sdk version
+    version    = v"8.4.0" # dwave-ocean-sdk version
     attributes = begin
         "num_reads"::Integer = 1_000
         "num_sweeps"::Integer = 1_000
