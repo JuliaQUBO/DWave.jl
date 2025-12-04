@@ -11,7 +11,7 @@ const dwave_samplers = PythonCall.pynew() # initially NULL
 
 function __init__()
     # Note: 'neal' package was deprecated and replaced by 'dwave.samplers' in dwave-ocean-sdk 8.0+
-    PythonCall.pycopy!(neal, pyimport("dwave.samplers"))
+    PythonCall.pycopy!(dwave_samplers, pyimport("dwave.samplers"))
 end
 
 @doc raw"""
