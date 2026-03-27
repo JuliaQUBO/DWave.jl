@@ -1,6 +1,5 @@
 import DWave
 import QUBODrivers
-import Random
 
 if DWave.__auth__(; verbose = false)
     QUBODrivers.test(DWave.Optimizer; examples = true)

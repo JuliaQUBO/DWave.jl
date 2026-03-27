@@ -56,7 +56,7 @@ function QUBODrivers.sample(sampler::Optimizer{T}) where {T}
 
     # Call D-Wave Neal API
     sampler = dwave_samplers.SimulatedAnnealingSampler()
-    results = @timed sampler.sample_ising(np.array(h), np.array(J); params...)
+    results = @timed sampler.sample_ising(Py(h), Py(J); params...)
 
     # Format Samples
     samples = QUBOTools.Sample{T,Int}[]
