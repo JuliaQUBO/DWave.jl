@@ -8,3 +8,5 @@ else
 end
 
 QUBODrivers.test(DWave.Neal.Optimizer; examples = true)
+
+include("neal_parity.jl")

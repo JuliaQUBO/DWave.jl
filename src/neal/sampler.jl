@@ -7,9 +7,11 @@ import MathOptInterface as MOI
 using PythonCall
 
 # -*- :: Python D-Wave Simulated Annealing :: -*- #
+const np = PythonCall.pynew() # initially NULL
 const dwave_samplers = PythonCall.pynew() # initially NULL
 
 function __init__()
+    PythonCall.pycopy!(np, pyimport("numpy"))
     # Note: 'neal' package was deprecated and replaced by 'dwave.samplers' in dwave-ocean-sdk 8.0+
     PythonCall.pycopy!(dwave_samplers, pyimport("dwave.samplers"))
 end
@@ -37,7 +39,7 @@ end
 
 function QUBODrivers.sample(sampler::Optimizer{T}) where {T}
     # Retrieve Ising Model
-    n, h, J, α, β = QUBOTools.ising(sampler, :dict; sense = :min)
+    n, h, J, α, β = QUBOTools.ising(sampler, :dense; sense = :min)
 
     # Retrieve Optimizer Attributes
     params = Dict{Symbol,Any}(
@@ -54,11 +56,12 @@ function QUBODrivers.sample(sampler::Optimizer{T}) where {T}
 
     # Call D-Wave Neal API
     sampler = dwave_samplers.SimulatedAnnealingSampler()
-    results = @timed sampler.sample_ising(h, J; params...)
+    results = @timed sampler.sample_ising(Py(h), Py(J); params...)
 
     # Format Samples
     samples = QUBOTools.Sample{T,Int}[]
-    var_map = pyconvert.(Int, [var for var in results.value.variables])
+    # NumPy-array Ising inputs label variables 0:(n-1) on the Python side.
+    var_map = pyconvert.(Int, [var for var in results.value.variables]) .+ 1
 
     for (ϕ, λ, r) in results.value.record
         # the dwave sampler will not consider variables that are not
