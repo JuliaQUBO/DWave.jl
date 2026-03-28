@@ -16,7 +16,6 @@ function _import_sa_sampler()
         importlib = pyimport("importlib"),
         pathlib = pyimport("pathlib"),
         sys = pyimport("sys"),
-        types = pyimport("types"),
     )
 
     ans = PythonCall.pyexec(
@@ -25,25 +24,43 @@ function _import_sa_sampler()
 root = pathlib.Path(next(iter(dwave.__path__)))
 samplers_name = "dwave.samplers"
 sa_name = "dwave.samplers.sa"
+sampler_name = "dwave.samplers.sa.sampler"
 
 samplers_pkg = sys.modules.get(samplers_name)
 if samplers_pkg is None:
-    samplers_pkg = types.ModuleType(samplers_name)
-    samplers_pkg.__path__ = [str(root / "samplers")]
-    samplers_pkg.__package__ = samplers_name
+    samplers_spec = importlib.util.spec_from_file_location(
+        samplers_name,
+        root / "samplers" / "__init__.py",
+        submodule_search_locations=[str(root / "samplers")],
+    )
+    samplers_pkg = importlib.util.module_from_spec(samplers_spec)
     sys.modules[samplers_name] = samplers_pkg
 
 dwave.samplers = samplers_pkg
 
 sa_pkg = sys.modules.get(sa_name)
 if sa_pkg is None:
-    sa_pkg = types.ModuleType(sa_name)
-    sa_pkg.__path__ = [str(root / "samplers" / "sa")]
-    sa_pkg.__package__ = sa_name
+    sa_spec = importlib.util.spec_from_file_location(
+        sa_name,
+        root / "samplers" / "sa" / "__init__.py",
+        submodule_search_locations=[str(root / "samplers" / "sa")],
+    )
+    sa_pkg = importlib.util.module_from_spec(sa_spec)
     sys.modules[sa_name] = sa_pkg
 
 samplers_pkg.sa = sa_pkg
-sampler = importlib.import_module("dwave.samplers.sa.sampler")
+
+sampler = sys.modules.get(sampler_name)
+if sampler is None:
+    spec = importlib.util.spec_from_file_location(
+        sampler_name,
+        root / "samplers" / "sa" / "sampler.py",
+    )
+    sampler = importlib.util.module_from_spec(spec)
+    sys.modules[sampler_name] = sampler
+    spec.loader.exec_module(sampler)
+
+sa_pkg.sampler = sampler
 """,
         @__MODULE__,
         locals,
@@ -55,9 +72,8 @@ end
 function __init__()
     PythonCall.pycopy!(np, pyimport("numpy"))
     # Note: 'neal' package was deprecated and replaced by 'dwave.samplers' in
-    # dwave-ocean-sdk 8.0+. Construct the intermediate package objects
-    # manually so we can import only the simulated annealing module without
-    # executing dwave.samplers.__init__ and pulling in unrelated samplers.
+    # dwave-ocean-sdk 8.0+. Load the simulated annealing submodule directly so
+    # we do not execute dwave.samplers.__init__ and pull in unrelated samplers.
     PythonCall.pycopy!(dwave_samplers, _import_sa_sampler())
 end
 
