@@ -135,9 +135,42 @@ function _wrapper_neal_error(h::Vector{Float64}, J::Matrix{Float64}; kwargs...)
     end
 end
 
-Test.@testset "Neal imports only the simulated annealing module" begin
+function _reset_neal_python_modules!()
+    DWave.Neal.PythonCall.pyexec(
+        """
+for name in [name for name in list(sys.modules) if name == "dwave.samplers" or name.startswith("dwave.samplers.")]:
+    del sys.modules[name]
+
+if hasattr(dwave, "samplers"):
+    del dwave.samplers
+""",
+        @__MODULE__,
+        (
+            dwave = DWave.Neal.PythonCall.pyimport("dwave"),
+            sys = DWave.Neal.PythonCall.pyimport("sys"),
+        ),
+    )
+
+    DWave.Neal.__init__()
+
+    return nothing
+end
+
+function _sys_modules_contains(name::String)
+    sys = DWave.Neal.PythonCall.pyimport("sys")
+    return DWave.Neal.PythonCall.pyconvert(Bool, sys.modules.__contains__(name))
+end
+
+Test.@testset "Neal initialization bypasses unrelated sampler imports" begin
+    _reset_neal_python_modules!()
+
     Test.@test DWave.Neal.PythonCall.pyconvert(String, DWave.Neal.dwave_samplers.__name__) ==
         "dwave.samplers.sa.sampler"
+    Test.@test _sys_modules_contains("dwave.samplers")
+    Test.@test _sys_modules_contains("dwave.samplers.sa")
+    Test.@test _sys_modules_contains("dwave.samplers.sa.sampler")
+    Test.@test _sys_modules_contains("dwave.samplers.sa.simulated_annealing")
+    Test.@test !_sys_modules_contains("dwave.samplers.random")
     Test.@test DWave.Neal.dwave_samplers.SimulatedAnnealingSampler !== nothing
 end
 

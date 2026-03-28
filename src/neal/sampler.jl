@@ -10,12 +10,55 @@ using PythonCall
 const np = PythonCall.pynew() # initially NULL
 const dwave_samplers = PythonCall.pynew() # initially NULL
 
+function _import_sa_sampler()
+    locals = (
+        dwave = pyimport("dwave"),
+        importlib = pyimport("importlib"),
+        pathlib = pyimport("pathlib"),
+        sys = pyimport("sys"),
+        types = pyimport("types"),
+    )
+
+    ans = PythonCall.pyexec(
+        @NamedTuple{sampler::PythonCall.Py},
+        """
+root = pathlib.Path(next(iter(dwave.__path__)))
+samplers_name = "dwave.samplers"
+sa_name = "dwave.samplers.sa"
+
+samplers_pkg = sys.modules.get(samplers_name)
+if samplers_pkg is None:
+    samplers_pkg = types.ModuleType(samplers_name)
+    samplers_pkg.__path__ = [str(root / "samplers")]
+    samplers_pkg.__package__ = samplers_name
+    sys.modules[samplers_name] = samplers_pkg
+
+dwave.samplers = samplers_pkg
+
+sa_pkg = sys.modules.get(sa_name)
+if sa_pkg is None:
+    sa_pkg = types.ModuleType(sa_name)
+    sa_pkg.__path__ = [str(root / "samplers" / "sa")]
+    sa_pkg.__package__ = sa_name
+    sys.modules[sa_name] = sa_pkg
+
+samplers_pkg.sa = sa_pkg
+sampler = importlib.import_module("dwave.samplers.sa.sampler")
+""",
+        @__MODULE__,
+        locals,
+    )
+
+    return ans.sampler
+end
+
 function __init__()
     PythonCall.pycopy!(np, pyimport("numpy"))
     # Note: 'neal' package was deprecated and replaced by 'dwave.samplers' in
-    # dwave-ocean-sdk 8.0+. Import only the simulated annealing module we use,
-    # so unrelated sampler imports cannot break `DWave.Neal` initialization.
-    PythonCall.pycopy!(dwave_samplers, pyimport("dwave.samplers.sa.sampler"))
+    # dwave-ocean-sdk 8.0+. Construct the intermediate package objects
+    # manually so we can import only the simulated annealing module without
+    # executing dwave.samplers.__init__ and pulling in unrelated samplers.
+    PythonCall.pycopy!(dwave_samplers, _import_sa_sampler())
 end
 
 @doc raw"""
