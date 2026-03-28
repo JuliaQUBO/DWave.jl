@@ -12,8 +12,10 @@ const dwave_samplers = PythonCall.pynew() # initially NULL
 
 function __init__()
     PythonCall.pycopy!(np, pyimport("numpy"))
-    # Note: 'neal' package was deprecated and replaced by 'dwave.samplers' in dwave-ocean-sdk 8.0+
-    PythonCall.pycopy!(dwave_samplers, pyimport("dwave.samplers"))
+    # Note: 'neal' package was deprecated and replaced by 'dwave.samplers' in
+    # dwave-ocean-sdk 8.0+. Import only the simulated annealing module we use,
+    # so unrelated sampler imports cannot break `DWave.Neal` initialization.
+    PythonCall.pycopy!(dwave_samplers, pyimport("dwave.samplers.sa.sampler"))
 end
 
 @doc raw"""

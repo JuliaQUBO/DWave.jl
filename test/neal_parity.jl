@@ -135,6 +135,12 @@ function _wrapper_neal_error(h::Vector{Float64}, J::Matrix{Float64}; kwargs...)
     end
 end
 
+Test.@testset "Neal imports only the simulated annealing module" begin
+    Test.@test DWave.Neal.PythonCall.pyconvert(String, DWave.Neal.dwave_samplers.__name__) ==
+        "dwave.samplers.sa.sampler"
+    Test.@test DWave.Neal.dwave_samplers.SimulatedAnnealingSampler !== nothing
+end
+
 Test.@testset "Neal parity with direct dwave.samplers" begin
     h, J = _random_ising_instance(100, 42)
 
