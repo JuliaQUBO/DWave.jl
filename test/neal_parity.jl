@@ -186,8 +186,8 @@ end
 Test.@testset "Neal initialization loads the simulated annealing sampler" begin
     _reset_neal_python_modules!()
 
-    Test.@test DWave.Neal.PythonCall.pyconvert(String, DWave.Neal.dwave_samplers.__name__) ==
-        "dwave.samplers.sa.sampler"
+    Test.@test DWave.Neal.PythonCall.pyconvert(String, DWave.Neal.dwave_samplers.__name__) in
+        ("dwave.samplers.sa.sampler", "dwave.samplers")
     Test.@test _sys_modules_contains("dwave.samplers")
     Test.@test _sys_modules_contains("dwave.samplers.sa")
     Test.@test _sys_modules_contains("dwave.samplers.sa.sampler")
@@ -196,9 +196,13 @@ Test.@testset "Neal initialization loads the simulated annealing sampler" begin
     Test.@test DWave.Neal.dwave_samplers_import_mode[] in (:narrow, :fallback)
 
     if DWave.Neal.dwave_samplers_import_mode[] == :narrow
+        Test.@test DWave.Neal.PythonCall.pyconvert(String, DWave.Neal.dwave_samplers.__name__) ==
+            "dwave.samplers.sa.sampler"
         Test.@test !_sys_modules_contains("dwave.samplers.random")
     else
         Test.@test DWave.Neal.dwave_samplers_import_mode[] == :fallback
+        Test.@test DWave.Neal.PythonCall.pyconvert(String, DWave.Neal.dwave_samplers.__name__) ==
+            "dwave.samplers"
     end
 end
 

@@ -98,19 +98,15 @@ function __init__()
     # Note: 'neal' package was deprecated and replaced by 'dwave.samplers' in
     # dwave-ocean-sdk 8.0+. Load the simulated annealing submodule directly so
     # we do not execute dwave.samplers.__init__ and pull in unrelated samplers.
-    try
+    if Sys.iswindows()
+        # On Windows, the compiled simulated_annealing extension only imports
+        # reliably through Python's standard package path.
+        _clear_sa_import_state!()
+        PythonCall.pycopy!(dwave_samplers, pyimport("dwave.samplers"))
+        dwave_samplers_import_mode[] = :fallback
+    else
         PythonCall.pycopy!(dwave_samplers, _import_sa_sampler())
         dwave_samplers_import_mode[] = :narrow
-    catch err
-        if Sys.iswindows()
-            # The direct module loader works on Linux, but Windows still needs
-            # Python's standard package import path for the compiled extension.
-            _clear_sa_import_state!()
-            PythonCall.pycopy!(dwave_samplers, pyimport("dwave.samplers"))
-            dwave_samplers_import_mode[] = :fallback
-        else
-            rethrow(err)
-        end
     end
 end
 
