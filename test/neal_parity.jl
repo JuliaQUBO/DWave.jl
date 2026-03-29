@@ -136,22 +136,44 @@ function _wrapper_neal_error(h::Vector{Float64}, J::Matrix{Float64}; kwargs...)
 end
 
 function _reset_neal_python_modules!()
+    DWave.Neal._clear_sa_import_state!()
+    DWave.Neal.__init__()
+
+    return nothing
+end
+
+function _inject_broken_sa_sampler!()
+    DWave.Neal._clear_sa_import_state!()
+
     DWave.Neal.PythonCall.pyexec(
         """
-for name in [name for name in list(sys.modules) if name == "dwave.samplers" or name.startswith("dwave.samplers.")]:
-    del sys.modules[name]
+samplers_name = "dwave.samplers"
+sa_name = "dwave.samplers.sa"
+sampler_name = "dwave.samplers.sa.sampler"
 
-if hasattr(dwave, "samplers"):
-    del dwave.samplers
+samplers_pkg = types.ModuleType(samplers_name)
+samplers_pkg.__path__ = []
+samplers_pkg.__package__ = samplers_name
+sys.modules[samplers_name] = samplers_pkg
+dwave.samplers = samplers_pkg
+
+sa_pkg = types.ModuleType(sa_name)
+sa_pkg.__path__ = []
+sa_pkg.__package__ = sa_name
+sys.modules[sa_name] = sa_pkg
+samplers_pkg.sa = sa_pkg
+
+sampler = types.ModuleType(sampler_name)
+sys.modules[sampler_name] = sampler
+sa_pkg.sampler = sampler
 """,
         @__MODULE__,
         (
             dwave = DWave.Neal.PythonCall.pyimport("dwave"),
             sys = DWave.Neal.PythonCall.pyimport("sys"),
+            types = DWave.Neal.PythonCall.pyimport("types"),
         ),
     )
-
-    DWave.Neal.__init__()
 
     return nothing
 end
@@ -178,6 +200,16 @@ Test.@testset "Neal initialization loads the simulated annealing sampler" begin
     else
         Test.@test DWave.Neal.dwave_samplers_import_mode[] == :fallback
     end
+end
+
+Test.@testset "Neal initialization repairs broken sampler cache state" begin
+    _inject_broken_sa_sampler!()
+    DWave.Neal.__init__()
+
+    Test.@test DWave.Neal.PythonCall.pyconvert(String, DWave.Neal.dwave_samplers.__name__) in
+        ("dwave.samplers.sa.sampler", "dwave.samplers")
+    Test.@test DWave.Neal.dwave_samplers.SimulatedAnnealingSampler !== nothing
+    Test.@test DWave.Neal.dwave_samplers_import_mode[] in (:narrow, :fallback)
 end
 
 Test.@testset "Neal parity with direct dwave.samplers" begin

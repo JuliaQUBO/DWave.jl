@@ -11,6 +11,25 @@ const np = PythonCall.pynew() # initially NULL
 const dwave_samplers = PythonCall.pynew() # initially NULL
 const dwave_samplers_import_mode = Ref{Symbol}(:uninitialized)
 
+function _clear_sa_import_state!()
+    PythonCall.pyexec(
+        """
+for name in ("dwave.samplers.sa.sampler", "dwave.samplers.sa", "dwave.samplers"):
+    sys.modules.pop(name, None)
+
+if hasattr(dwave, "samplers"):
+    del dwave.samplers
+""",
+        @__MODULE__,
+        (
+            dwave = pyimport("dwave"),
+            sys = pyimport("sys"),
+        ),
+    )
+
+    return nothing
+end
+
 function _import_sa_sampler()
     locals = (
         dwave = pyimport("dwave"),
@@ -52,6 +71,10 @@ if sa_pkg is None:
 samplers_pkg.sa = sa_pkg
 
 sampler = sys.modules.get(sampler_name)
+if sampler is not None and not hasattr(sampler, "SimulatedAnnealingSampler"):
+    del sys.modules[sampler_name]
+    sampler = None
+
 if sampler is None:
     spec = importlib.util.spec_from_file_location(
         sampler_name,
@@ -82,7 +105,8 @@ function __init__()
         if Sys.iswindows()
             # The direct module loader works on Linux, but Windows still needs
             # Python's standard package import path for the compiled extension.
-            PythonCall.pycopy!(dwave_samplers, pyimport("dwave.samplers.sa.sampler"))
+            _clear_sa_import_state!()
+            PythonCall.pycopy!(dwave_samplers, pyimport("dwave.samplers"))
             dwave_samplers_import_mode[] = :fallback
         else
             rethrow(err)
