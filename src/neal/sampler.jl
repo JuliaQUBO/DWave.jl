@@ -9,6 +9,7 @@ using PythonCall
 # -*- :: Python D-Wave Simulated Annealing :: -*- #
 const np = PythonCall.pynew() # initially NULL
 const dwave_samplers = PythonCall.pynew() # initially NULL
+const dwave_samplers_import_mode = Ref{Symbol}(:uninitialized)
 
 function _import_sa_sampler()
     locals = (
@@ -74,7 +75,19 @@ function __init__()
     # Note: 'neal' package was deprecated and replaced by 'dwave.samplers' in
     # dwave-ocean-sdk 8.0+. Load the simulated annealing submodule directly so
     # we do not execute dwave.samplers.__init__ and pull in unrelated samplers.
-    PythonCall.pycopy!(dwave_samplers, _import_sa_sampler())
+    try
+        PythonCall.pycopy!(dwave_samplers, _import_sa_sampler())
+        dwave_samplers_import_mode[] = :narrow
+    catch err
+        if Sys.iswindows()
+            # The direct module loader works on Linux, but Windows still needs
+            # Python's standard package import path for the compiled extension.
+            PythonCall.pycopy!(dwave_samplers, pyimport("dwave.samplers.sa.sampler"))
+            dwave_samplers_import_mode[] = :fallback
+        else
+            rethrow(err)
+        end
+    end
 end
 
 @doc raw"""

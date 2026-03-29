@@ -161,7 +161,7 @@ function _sys_modules_contains(name::String)
     return DWave.Neal.PythonCall.pyconvert(Bool, sys.modules.__contains__(name))
 end
 
-Test.@testset "Neal initialization bypasses unrelated sampler imports" begin
+Test.@testset "Neal initialization loads the simulated annealing sampler" begin
     _reset_neal_python_modules!()
 
     Test.@test DWave.Neal.PythonCall.pyconvert(String, DWave.Neal.dwave_samplers.__name__) ==
@@ -170,8 +170,14 @@ Test.@testset "Neal initialization bypasses unrelated sampler imports" begin
     Test.@test _sys_modules_contains("dwave.samplers.sa")
     Test.@test _sys_modules_contains("dwave.samplers.sa.sampler")
     Test.@test _sys_modules_contains("dwave.samplers.sa.simulated_annealing")
-    Test.@test !_sys_modules_contains("dwave.samplers.random")
     Test.@test DWave.Neal.dwave_samplers.SimulatedAnnealingSampler !== nothing
+    Test.@test DWave.Neal.dwave_samplers_import_mode[] in (:narrow, :fallback)
+
+    if DWave.Neal.dwave_samplers_import_mode[] == :narrow
+        Test.@test !_sys_modules_contains("dwave.samplers.random")
+    else
+        Test.@test DWave.Neal.dwave_samplers_import_mode[] == :fallback
+    end
 end
 
 Test.@testset "Neal parity with direct dwave.samplers" begin
