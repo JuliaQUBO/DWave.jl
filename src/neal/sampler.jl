@@ -15,6 +15,8 @@ Tracks how `dwave_samplers` was initialized.
 - `:uninitialized`: `DWave.Neal.__init__()` has not run yet.
 - `:narrow`: the wrapper rebuilt a minimal `dwave.samplers.sa` package tree and
   imported only `dwave.samplers.sa.sampler`.
+- `:fallback`: Windows fell back to Python's standard import path for
+  `dwave.samplers.sa.sampler`.
 """
 const dwave_samplers_import_mode = Ref{Symbol}(:uninitialized)
 
@@ -115,8 +117,21 @@ function __init__()
     # Rebuild the package tree from a clean Python import state so repeated
     # initialization and partially imported modules do not leak into the wrapper.
     _clear_sa_import_state!()
-    PythonCall.pycopy!(dwave_samplers, _import_sa_sampler())
-    dwave_samplers_import_mode[] = :narrow
+
+    try
+        PythonCall.pycopy!(dwave_samplers, _import_sa_sampler())
+        dwave_samplers_import_mode[] = :narrow
+    catch err
+        if Sys.iswindows()
+            # Windows still needs Python's standard package import machinery for
+            # the compiled simulated_annealing extension to resolve its DLLs.
+            _clear_sa_import_state!()
+            PythonCall.pycopy!(dwave_samplers, pyimport("dwave.samplers.sa.sampler"))
+            dwave_samplers_import_mode[] = :fallback
+        else
+            rethrow(err)
+        end
+    end
 
     return nothing
 end

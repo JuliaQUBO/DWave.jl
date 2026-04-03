@@ -208,8 +208,14 @@ Test.@testset "Neal initialization loads the simulated annealing sampler" begin
     Test.@test _sys_modules_contains("dwave.samplers.sa.sampler")
     Test.@test _sys_modules_contains("dwave.samplers.sa.simulated_annealing")
     Test.@test DWave.Neal.dwave_samplers.SimulatedAnnealingSampler !== nothing
-    Test.@test DWave.Neal.dwave_samplers_import_mode[] == :narrow
-    Test.@test !_sys_modules_contains("dwave.samplers.random")
+
+    if Sys.iswindows()
+        Test.@test DWave.Neal.dwave_samplers_import_mode[] in (:narrow, :fallback)
+    else
+        Test.@test DWave.Neal.dwave_samplers_import_mode[] == :narrow
+        Test.@test !_sys_modules_contains("dwave.samplers.random")
+    end
+
     _assert_neal_sampler_works()
 end
 
@@ -220,9 +226,15 @@ Test.@testset "Neal initialization repairs broken sampler cache state" begin
     Test.@test DWave.Neal.PythonCall.pyconvert(String, DWave.Neal.dwave_samplers.__name__) ==
         "dwave.samplers.sa.sampler"
     Test.@test DWave.Neal.dwave_samplers.SimulatedAnnealingSampler !== nothing
-    Test.@test DWave.Neal.dwave_samplers_import_mode[] == :narrow
+
+    if Sys.iswindows()
+        Test.@test DWave.Neal.dwave_samplers_import_mode[] in (:narrow, :fallback)
+    else
+        Test.@test DWave.Neal.dwave_samplers_import_mode[] == :narrow
+        Test.@test !_sys_modules_contains("dwave.samplers.random")
+    end
+
     Test.@test _sys_modules_contains("dwave.samplers.sa.simulated_annealing")
-    Test.@test !_sys_modules_contains("dwave.samplers.random")
     _assert_neal_sampler_works()
 end
 
