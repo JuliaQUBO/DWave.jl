@@ -9,13 +9,27 @@ using PythonCall
 # -*- :: Python D-Wave Simulated Annealing :: -*- #
 const np = PythonCall.pynew() # initially NULL
 const dwave_samplers = PythonCall.pynew() # initially NULL
+"""
+Tracks how `dwave_samplers` was initialized.
+
+- `:uninitialized`: `DWave.Neal.__init__()` has not run yet.
+- `:narrow`: the wrapper rebuilt a minimal `dwave.samplers.sa` package tree and
+  imported only `dwave.samplers.sa.sampler`.
+"""
 const dwave_samplers_import_mode = Ref{Symbol}(:uninitialized)
 
+"""
+Clear the cached `dwave.samplers` module tree before rebuilding the Neal import state.
+
+This mutates Python's `sys.modules` and should only be used during package
+initialization or in tests that need a clean import environment.
+"""
 function _clear_sa_import_state!()
     PythonCall.pyexec(
         """
-for name in ("dwave.samplers.sa.sampler", "dwave.samplers.sa", "dwave.samplers"):
-    sys.modules.pop(name, None)
+for name in tuple(sys.modules):
+    if name == "dwave.samplers" or name.startswith("dwave.samplers."):
+        sys.modules.pop(name, None)
 
 if hasattr(dwave, "samplers"):
     del dwave.samplers
@@ -41,48 +55,48 @@ function _import_sa_sampler()
     ans = PythonCall.pyexec(
         @NamedTuple{sampler::PythonCall.Py},
         """
-root = pathlib.Path(next(iter(dwave.__path__)))
+root = next(iter(dwave.__path__), None)
+if root is None:
+    raise ImportError("dwave package does not define an import path")
+
+root = pathlib.Path(root)
 samplers_name = "dwave.samplers"
 sa_name = "dwave.samplers.sa"
 sampler_name = "dwave.samplers.sa.sampler"
+samplers_dir = root / "samplers"
+sa_dir = samplers_dir / "sa"
 
-samplers_pkg = sys.modules.get(samplers_name)
-if samplers_pkg is None:
-    samplers_spec = importlib.util.spec_from_file_location(
-        samplers_name,
-        root / "samplers" / "__init__.py",
-        submodule_search_locations=[str(root / "samplers")],
-    )
-    samplers_pkg = importlib.util.module_from_spec(samplers_spec)
-    sys.modules[samplers_name] = samplers_pkg
+samplers_spec = importlib.util.spec_from_file_location(
+    samplers_name,
+    samplers_dir / "__init__.py",
+    submodule_search_locations=[str(samplers_dir)],
+)
+samplers_pkg = importlib.util.module_from_spec(samplers_spec)
+# Keep the real package search path, but do not execute __init__ because that
+# eagerly imports unrelated samplers such as dwave.samplers.random.
+sys.modules[samplers_name] = samplers_pkg
 
 dwave.samplers = samplers_pkg
 
-sa_pkg = sys.modules.get(sa_name)
-if sa_pkg is None:
-    sa_spec = importlib.util.spec_from_file_location(
-        sa_name,
-        root / "samplers" / "sa" / "__init__.py",
-        submodule_search_locations=[str(root / "samplers" / "sa")],
-    )
-    sa_pkg = importlib.util.module_from_spec(sa_spec)
-    sys.modules[sa_name] = sa_pkg
+sa_spec = importlib.util.spec_from_file_location(
+    sa_name,
+    sa_dir / "__init__.py",
+    submodule_search_locations=[str(sa_dir)],
+)
+sa_pkg = importlib.util.module_from_spec(sa_spec)
+# As above, keep a valid package object for submodule resolution without running
+# dwave.samplers.sa.__init__.
+sys.modules[sa_name] = sa_pkg
 
 samplers_pkg.sa = sa_pkg
 
-sampler = sys.modules.get(sampler_name)
-if sampler is not None and not hasattr(sampler, "SimulatedAnnealingSampler"):
-    del sys.modules[sampler_name]
-    sampler = None
-
-if sampler is None:
-    spec = importlib.util.spec_from_file_location(
-        sampler_name,
-        root / "samplers" / "sa" / "sampler.py",
-    )
-    sampler = importlib.util.module_from_spec(spec)
-    sys.modules[sampler_name] = sampler
-    spec.loader.exec_module(sampler)
+spec = importlib.util.spec_from_file_location(
+    sampler_name,
+    sa_dir / "sampler.py",
+)
+sampler = importlib.util.module_from_spec(spec)
+sys.modules[sampler_name] = sampler
+spec.loader.exec_module(sampler)
 
 sa_pkg.sampler = sampler
 """,
@@ -98,16 +112,13 @@ function __init__()
     # Note: 'neal' package was deprecated and replaced by 'dwave.samplers' in
     # dwave-ocean-sdk 8.0+. Load the simulated annealing submodule directly so
     # we do not execute dwave.samplers.__init__ and pull in unrelated samplers.
-    if Sys.iswindows()
-        # On Windows, the compiled simulated_annealing extension only imports
-        # reliably through Python's standard package path.
-        _clear_sa_import_state!()
-        PythonCall.pycopy!(dwave_samplers, pyimport("dwave.samplers"))
-        dwave_samplers_import_mode[] = :fallback
-    else
-        PythonCall.pycopy!(dwave_samplers, _import_sa_sampler())
-        dwave_samplers_import_mode[] = :narrow
-    end
+    # Rebuild the package tree from a clean Python import state so repeated
+    # initialization and partially imported modules do not leak into the wrapper.
+    _clear_sa_import_state!()
+    PythonCall.pycopy!(dwave_samplers, _import_sa_sampler())
+    dwave_samplers_import_mode[] = :narrow
+
+    return nothing
 end
 
 @doc raw"""

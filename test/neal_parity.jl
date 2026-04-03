@@ -137,6 +137,7 @@ end
 
 function _reset_neal_python_modules!()
     DWave.Neal._clear_sa_import_state!()
+    # A failure here means the Neal import path could not be rebuilt cleanly.
     DWave.Neal.__init__()
 
     return nothing
@@ -183,37 +184,46 @@ function _sys_modules_contains(name::String)
     return DWave.Neal.PythonCall.pyconvert(Bool, sys.modules.__contains__(name))
 end
 
+function _assert_neal_sampler_works()
+    h = [0.0, -1.0]
+    J = zeros(Float64, 2, 2)
+    J[1, 2] = -1.0
+
+    records = _direct_neal_records(h, J; num_reads = 1, num_sweeps = 10, seed = 314_159)
+
+    Test.@test length(records) == 1
+    Test.@test isfinite(only(records).energy)
+    Test.@test all(abs.(collect(only(records).state)) .== 1)
+
+    return nothing
+end
+
 Test.@testset "Neal initialization loads the simulated annealing sampler" begin
     _reset_neal_python_modules!()
 
-    Test.@test DWave.Neal.PythonCall.pyconvert(String, DWave.Neal.dwave_samplers.__name__) in
-        ("dwave.samplers.sa.sampler", "dwave.samplers")
+    Test.@test DWave.Neal.PythonCall.pyconvert(String, DWave.Neal.dwave_samplers.__name__) ==
+        "dwave.samplers.sa.sampler"
     Test.@test _sys_modules_contains("dwave.samplers")
     Test.@test _sys_modules_contains("dwave.samplers.sa")
     Test.@test _sys_modules_contains("dwave.samplers.sa.sampler")
     Test.@test _sys_modules_contains("dwave.samplers.sa.simulated_annealing")
     Test.@test DWave.Neal.dwave_samplers.SimulatedAnnealingSampler !== nothing
-    Test.@test DWave.Neal.dwave_samplers_import_mode[] in (:narrow, :fallback)
-
-    if DWave.Neal.dwave_samplers_import_mode[] == :narrow
-        Test.@test DWave.Neal.PythonCall.pyconvert(String, DWave.Neal.dwave_samplers.__name__) ==
-            "dwave.samplers.sa.sampler"
-        Test.@test !_sys_modules_contains("dwave.samplers.random")
-    else
-        Test.@test DWave.Neal.dwave_samplers_import_mode[] == :fallback
-        Test.@test DWave.Neal.PythonCall.pyconvert(String, DWave.Neal.dwave_samplers.__name__) ==
-            "dwave.samplers"
-    end
+    Test.@test DWave.Neal.dwave_samplers_import_mode[] == :narrow
+    Test.@test !_sys_modules_contains("dwave.samplers.random")
+    _assert_neal_sampler_works()
 end
 
 Test.@testset "Neal initialization repairs broken sampler cache state" begin
     _inject_broken_sa_sampler!()
     DWave.Neal.__init__()
 
-    Test.@test DWave.Neal.PythonCall.pyconvert(String, DWave.Neal.dwave_samplers.__name__) in
-        ("dwave.samplers.sa.sampler", "dwave.samplers")
+    Test.@test DWave.Neal.PythonCall.pyconvert(String, DWave.Neal.dwave_samplers.__name__) ==
+        "dwave.samplers.sa.sampler"
     Test.@test DWave.Neal.dwave_samplers.SimulatedAnnealingSampler !== nothing
-    Test.@test DWave.Neal.dwave_samplers_import_mode[] in (:narrow, :fallback)
+    Test.@test DWave.Neal.dwave_samplers_import_mode[] == :narrow
+    Test.@test _sys_modules_contains("dwave.samplers.sa.simulated_annealing")
+    Test.@test !_sys_modules_contains("dwave.samplers.random")
+    _assert_neal_sampler_works()
 end
 
 Test.@testset "Neal parity with direct dwave.samplers" begin
