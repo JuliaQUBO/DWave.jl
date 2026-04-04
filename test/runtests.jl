@@ -8,5 +8,9 @@ else
 end
 
 QUBODrivers.test(DWave.Neal.Optimizer; examples = true)
+QUBODrivers.test(DWave.Greedy.Optimizer; examples = true)
+QUBODrivers.test(DWave.Random.Optimizer; examples = true)
+QUBODrivers.test(DWave.Tabu.Optimizer; examples = true)
 
 include("neal_parity.jl")
+include("classical_parity.jl")

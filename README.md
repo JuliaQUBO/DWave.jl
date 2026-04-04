@@ -35,6 +35,20 @@ for i = 1:result_count(model)
 end
 ```
 
+## Classical Samplers
+`DWave.jl` also exposes wrappers for the classical samplers shipped in
+`dwave-samplers`:
+
+- `DWave.Neal.Optimizer`
+- `DWave.Greedy.Optimizer`
+- `DWave.Random.Optimizer`
+- `DWave.Tabu.Optimizer`
+
+The upstream `planar` and `tree` samplers are not wrapped yet. `PlanarGraphSolver`
+only applies to planar Ising models without linear biases, and the tree
+decomposition samplers expose exact-solver and marginal APIs that do not fit the
+current `QUBODrivers` interface cleanly.
+
 ## API Token
 To use D-Wave's QPU it is necessary to obtain an API Token from [Leap](https://cloud.dwavesys.com/leap/).
 
