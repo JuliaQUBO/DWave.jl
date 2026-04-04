@@ -29,6 +29,8 @@ QUBODrivers.@setup Optimizer begin
     name       = "D-Wave Greedy Steepest Descent Sampler"
     version    = v"8.4.0" # dwave-ocean-sdk version
     attributes = begin
+        # Delegate `nothing` to the upstream sampler, which infers num_reads
+        # from initial_states or defaults to a single read.
         "num_reads"::Union{Integer,Nothing} = nothing
         "initial_states"::Any = nothing
         "initial_states_generator"::String = "random"

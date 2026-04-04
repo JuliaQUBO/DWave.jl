@@ -19,6 +19,8 @@ function __init__()
         dwave_samplers,
         dwave_samplers_import_mode,
         "tabu";
+        # TabuSampler is re-exported from dwave.samplers.tabu.__init__, so this
+        # wrapper needs the package-level import rather than sampler.py alone.
         leaf_is_package = true,
     )
 

@@ -30,9 +30,9 @@ QUBODrivers.@setup Optimizer begin
     version    = v"8.4.0" # dwave-ocean-sdk version
     attributes = begin
         "num_reads"::Union{Integer,Nothing} = nothing
-        "time_limit"::Any = nothing
+        "time_limit"::Union{Real,Nothing} = nothing
         "max_num_samples"::Integer = 1_000
-        "seed"::Any = nothing
+        "seed"::Union{Integer,Nothing} = nothing
     end
 end
 

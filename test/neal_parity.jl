@@ -124,6 +124,12 @@ function _wrapper_neal_records(h::Vector{Float64}, J::Matrix{Float64}; kwargs...
     return records
 end
 
+function _wrapper_neal_sampleset(h::Vector{Float64}, J::Matrix{Float64}; kwargs...)
+    model, _ = _wrapper_neal_model(h, J; kwargs...)
+    MOI.optimize!(model)
+    return QUBOTools.solution(MOI.get(model, MOI.RawSolver()))
+end
+
 function _wrapper_neal_error(h::Vector{Float64}, J::Matrix{Float64}; kwargs...)
     model, _ = _wrapper_neal_model(h, J; kwargs...)
 
@@ -314,4 +320,17 @@ Test.@testset "Neal parity with sparse support" begin
 
     Test.@test wrapper_records == direct_records
     Test.@test all(all(abs.(record.state) .== 1) for record in wrapper_records)
+end
+
+Test.@testset "Neal metadata remains backward compatible" begin
+    h = [0.0, -1.0]
+    J = zeros(Float64, 2, 2)
+    J[1, 2] = -1.0
+
+    sampleset = _wrapper_neal_sampleset(h, J; num_reads = 4, num_sweeps = 10, seed = 7)
+    metadata = QUBOTools.metadata(sampleset)
+
+    Test.@test haskey(metadata, "origin")
+    Test.@test haskey(metadata, "time")
+    Test.@test !haskey(metadata, "dwave_info")
 end

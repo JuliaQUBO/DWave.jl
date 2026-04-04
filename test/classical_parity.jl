@@ -7,6 +7,10 @@ import Test
 const MOI = QUBODrivers.MOI
 const ClassicalRecord = NamedTuple{(:energy, :reads, :state),Tuple{Float64,Int,Tuple{Vararg{Int}}}}
 
+# These presence checks intentionally cover the dwave-samplers 8.4.0 internal
+# imports exercised by each target. Greedy reaches `descent` as a side effect of
+# importing `greedy/sampler.py`, and Random must load `cyrandom`, the compiled
+# extension whose import compatibility caused issue #9.
 const CLASSICAL_SPECS = (
     (
         name = "Greedy",
@@ -14,6 +18,7 @@ const CLASSICAL_SPECS = (
         optimizer = DWave.Greedy.Optimizer,
         constructor = :SteepestDescentSampler,
         module_name = "dwave.samplers.greedy.sampler",
+        fallback_import_name = DWave._dwave_samplers_import_name("greedy.sampler"),
         present_modules = (
             "dwave.samplers",
             "dwave.samplers.greedy",
@@ -32,6 +37,7 @@ const CLASSICAL_SPECS = (
         optimizer = DWave.Random.Optimizer,
         constructor = :RandomSampler,
         module_name = "dwave.samplers.random.sampler",
+        fallback_import_name = DWave._dwave_samplers_import_name("random.sampler"),
         present_modules = (
             "dwave.samplers",
             "dwave.samplers.random",
@@ -50,6 +56,7 @@ const CLASSICAL_SPECS = (
         optimizer = DWave.Tabu.Optimizer,
         constructor = :TabuSampler,
         module_name = "dwave.samplers.tabu",
+        fallback_import_name = DWave._dwave_samplers_import_name("tabu"),
         present_modules = (
             "dwave.samplers",
             "dwave.samplers.tabu",
@@ -185,6 +192,27 @@ function _classical_sys_modules_contains(name::String)
     return DWave.Neal.PythonCall.pyconvert(Bool, sys.modules.__contains__(name))
 end
 
+function _assert_classical_direct_sampler_works(spec)
+    h = [0.0, -1.0, 0.25]
+    J = zeros(Float64, 3, 3)
+    J[1, 2] = -1.0
+    J[2, 3] = 0.5
+
+    kwargs = if spec.name == "Tabu"
+        (; num_reads = 1, seed = 11, timeout = nothing, num_restarts = 0)
+    else
+        (; num_reads = 1, seed = 11)
+    end
+
+    records = _direct_records(spec, h, J; kwargs...)
+
+    Test.@test length(records) == 1
+    Test.@test isfinite(only(records).energy)
+    Test.@test all(abs.(collect(only(records).state)) .== 1)
+
+    return nothing
+end
+
 for spec in CLASSICAL_SPECS
     Test.@testset "$(spec.name) initialization isolates the sampler import tree" begin
         DWave._clear_dwave_samplers_import_state!()
@@ -209,6 +237,61 @@ for spec in CLASSICAL_SPECS
                 Test.@test !_classical_sys_modules_contains(module_name)
             end
         end
+    end
+end
+
+Test.@testset "Classical fallback import names resolve through Python import machinery" begin
+    for import_name in (
+        DWave._dwave_samplers_import_name("sa.sampler"),
+        CLASSICAL_SPECS[1].fallback_import_name,
+        CLASSICAL_SPECS[2].fallback_import_name,
+        CLASSICAL_SPECS[3].fallback_import_name,
+    )
+        DWave._clear_dwave_samplers_import_state!()
+        imported = DWave.Neal.PythonCall.pyimport(import_name)
+
+        Test.@test DWave.Neal.PythonCall.pyconvert(String, imported.__name__) == import_name
+    end
+end
+
+Test.@testset "Invalid classical import targets report ImportError clearly" begin
+    DWave._clear_dwave_samplers_import_state!()
+
+    err = try
+        DWave._import_dwave_samplers_target("missing.sampler")
+        nothing
+    catch caught
+        caught
+    end
+
+    Test.@test err isa DWave.Neal.PythonCall.PyException
+    Test.@test occursin("Could not build module spec", err === nothing ? "" : sprint(showerror, err))
+end
+
+Test.@testset "Classical sampler references survive full initialization" begin
+    DWave._clear_dwave_samplers_import_state!()
+    DWave.Neal.__init__()
+
+    for spec in CLASSICAL_SPECS
+        spec.sampler_module.__init__()
+    end
+
+    for module_name in (
+        "dwave.samplers.sa",
+        "dwave.samplers.sa.sampler",
+        "dwave.samplers.greedy",
+        "dwave.samplers.greedy.sampler",
+        "dwave.samplers.random",
+        "dwave.samplers.random.sampler",
+        "dwave.samplers.tabu",
+    )
+        Test.@test _classical_sys_modules_contains(module_name)
+    end
+
+    _assert_neal_sampler_works()
+
+    for spec in CLASSICAL_SPECS
+        _assert_classical_direct_sampler_works(spec)
     end
 end
 

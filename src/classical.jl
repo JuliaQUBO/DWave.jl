@@ -1,6 +1,5 @@
 """
-Clear the cached `dwave.samplers` module tree before rebuilding a classical
-sampler import state.
+Clear the cached `dwave.samplers` module tree.
 
 This mutates Python's `sys.modules` and should only be used during package
 initialization or in tests that need a clean import environment.
@@ -19,6 +18,61 @@ if hasattr(dwave, "samplers"):
         (
             dwave = pyimport("dwave"),
             sys = pyimport("sys"),
+        ),
+    )
+
+    return nothing
+end
+
+function _dwave_samplers_import_name(target::String)
+    return "dwave.samplers.$target"
+end
+
+"""
+Clear only the cached subtree for a specific `dwave.samplers` target.
+
+This preserves unrelated sampler subtrees that were already imported through
+other wrappers.
+"""
+function _clear_dwave_samplers_import_target!(target::String)
+    PythonCall.pyexec(
+        """
+samplers_name = "dwave.samplers"
+target_name = target_import_name
+
+prefixes = {target_name}
+target_parts = target_name.split(".")[2:]
+for i in range(1, len(target_parts)):
+    prefixes.add(f"{samplers_name}." + ".".join(target_parts[:i]))
+
+names_to_remove = set()
+for module_name in tuple(sys.modules):
+    for prefix in prefixes:
+        if module_name == prefix or module_name.startswith(prefix + "."):
+            names_to_remove.add(module_name)
+            break
+
+for name in sorted(names_to_remove, key=lambda item: item.count("."), reverse=True):
+    mod = sys.modules.pop(name, None)
+    if mod is None:
+        continue
+
+    parent_name, _, child_name = name.rpartition(".")
+    if parent_name and parent_name in sys.modules:
+        parent_mod = sys.modules[parent_name]
+        if getattr(parent_mod, child_name, None) is mod:
+            delattr(parent_mod, child_name)
+
+if samplers_name in sys.modules:
+    dwave.samplers = sys.modules[samplers_name]
+elif hasattr(dwave, "samplers"):
+    del dwave.samplers
+""",
+        @__MODULE__,
+        (
+            dwave = pyimport("dwave"),
+            sys = pyimport("sys"),
+            target_import_name = _dwave_samplers_import_name(target),
         ),
     )
 
@@ -53,13 +107,46 @@ root = pathlib.Path(root)
 samplers_name = "dwave.samplers"
 samplers_dir = root / "samplers"
 
-samplers_spec = importlib.util.spec_from_file_location(
-    samplers_name,
-    samplers_dir / "__init__.py",
-    submodule_search_locations=[str(samplers_dir)],
-)
-samplers_pkg = importlib.util.module_from_spec(samplers_spec)
-sys.modules[samplers_name] = samplers_pkg
+def build_spec_or_raise(name, location, submodule_search_locations=None, importlib=importlib):
+    if not location.exists():
+        raise ImportError(f"Could not build module spec for {name} from {location}")
+    spec = importlib.util.spec_from_file_location(
+        name,
+        location,
+        submodule_search_locations=submodule_search_locations,
+    )
+    if spec is None or spec.loader is None:
+        raise ImportError(f"Could not build module spec for {name} from {location}")
+    return spec
+
+def ensure_package_stub(
+    name,
+    directory,
+    parent_pkg=None,
+    attr_name=None,
+    sys=sys,
+    importlib=importlib,
+    build_spec_or_raise=build_spec_or_raise,
+):
+    expected_path = [str(directory)]
+    pkg_mod = sys.modules.get(name)
+    if pkg_mod is None or list(getattr(pkg_mod, "__path__", [])) != expected_path:
+        pkg_spec = build_spec_or_raise(
+            name,
+            directory / "__init__.py",
+            submodule_search_locations=expected_path,
+        )
+        pkg_mod = importlib.util.module_from_spec(pkg_spec)
+        # Register a package stub with the real search path, but do not execute
+        # __init__ because that would eagerly import unrelated samplers.
+        sys.modules[name] = pkg_mod
+
+    if parent_pkg is not None and attr_name is not None:
+        setattr(parent_pkg, attr_name, pkg_mod)
+
+    return pkg_mod
+
+samplers_pkg = ensure_package_stub(samplers_name, samplers_dir)
 dwave.samplers = samplers_pkg
 
 parts = target.split(".")
@@ -70,14 +157,7 @@ parent_dir = samplers_dir
 for part in parts[:-1]:
     parent_dir = parent_dir / part
     pkg_name = f"{parent_name}.{part}"
-    pkg_spec = importlib.util.spec_from_file_location(
-        pkg_name,
-        parent_dir / "__init__.py",
-        submodule_search_locations=[str(parent_dir)],
-    )
-    pkg_mod = importlib.util.module_from_spec(pkg_spec)
-    sys.modules[pkg_name] = pkg_mod
-    setattr(parent_pkg, part, pkg_mod)
+    pkg_mod = ensure_package_stub(pkg_name, parent_dir, parent_pkg, part)
     parent_pkg = pkg_mod
     parent_name = pkg_name
 
@@ -86,7 +166,7 @@ leaf_name = f"{parent_name}.{leaf}"
 
 if leaf_is_package:
     leaf_dir = parent_dir / leaf
-    leaf_spec = importlib.util.spec_from_file_location(
+    leaf_spec = build_spec_or_raise(
         leaf_name,
         leaf_dir / "__init__.py",
         submodule_search_locations=[str(leaf_dir)],
@@ -96,7 +176,7 @@ if leaf_is_package:
     setattr(parent_pkg, leaf, leaf_mod)
     leaf_spec.loader.exec_module(leaf_mod)
 else:
-    leaf_spec = importlib.util.spec_from_file_location(
+    leaf_spec = build_spec_or_raise(
         leaf_name,
         parent_dir / f"{leaf}.py",
     )
@@ -126,15 +206,19 @@ function _init_dwave_samplers_target!(
     target::String;
     leaf_is_package::Bool = false,
 )
-    _clear_dwave_samplers_import_state!()
+    # Keep sibling sampler modules alive in sys.modules by clearing only the
+    # target subtree, prefer the narrow import path that avoids executing
+    # dwave.samplers.__init__, and only fall back to Python's standard import
+    # machinery on Windows when compiled extensions require it.
+    _clear_dwave_samplers_import_target!(target)
 
     try
         PythonCall.pycopy!(target_ref, _import_dwave_samplers_target(target; leaf_is_package))
         import_mode[] = :narrow
     catch err
         if Sys.iswindows()
-            _clear_dwave_samplers_import_state!()
-            PythonCall.pycopy!(target_ref, pyimport("dwave.samplers.$target"))
+            _clear_dwave_samplers_import_target!(target)
+            PythonCall.pycopy!(target_ref, pyimport(_dwave_samplers_import_name(target)))
             import_mode[] = :fallback
         else
             rethrow(err)
@@ -166,7 +250,15 @@ function _normalize_initial_states(n::Int, initial_states)
     end
 end
 
-function _format_classical_sampleset(::Type{T}, results, n::Int, α, β; origin::String) where {T}
+function _format_classical_sampleset(
+    ::Type{T},
+    results,
+    n::Int,
+    α,
+    β;
+    origin::String,
+    include_dwave_info::Bool = true,
+) where {T}
     samples = QUBOTools.Sample{T,Int}[]
     var_map = pyconvert.(Int, [var for var in results.value.variables]) .+ 1
 
@@ -192,8 +284,11 @@ function _format_classical_sampleset(::Type{T}, results, n::Int, α, β; origin:
         "time" => Dict{String,Any}(
             "effective" => results.time,
         ),
-        "dwave_info" => jl_object(results.value.info),
     )
+
+    if include_dwave_info
+        metadata["dwave_info"] = jl_object(results.value.info)
+    end
 
     return QUBOTools.SampleSet{T,Int}(samples, metadata; sense = :min, domain = :spin)
 end

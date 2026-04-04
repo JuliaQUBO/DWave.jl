@@ -68,10 +68,18 @@ function QUBODrivers.sample(sampler::Optimizer{T}) where {T}
         :interrupt_function => MOI.get(sampler, MOI.RawOptimizerAttribute("interrupt_function")),
     )
 
-    sampler = dwave_samplers.SimulatedAnnealingSampler()
-    results = @timed sampler.sample_ising(Py(h), Py(J); params...)
+    py_sampler = dwave_samplers.SimulatedAnnealingSampler()
+    results = @timed py_sampler.sample_ising(Py(h), Py(J); params...)
 
-    return DWave._format_classical_sampleset(T, results, n, α, β; origin = "D-Wave Neal")
+    return DWave._format_classical_sampleset(
+        T,
+        results,
+        n,
+        α,
+        β;
+        origin = "D-Wave Neal",
+        include_dwave_info = false,
+    )
 end
 
 end # module Neal
