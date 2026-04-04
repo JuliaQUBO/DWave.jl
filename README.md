@@ -35,14 +35,64 @@ for i = 1:result_count(model)
 end
 ```
 
+## Sampler Overview
+`DWave.jl` provides two families of optimizers:
+
+- `DWave.Optimizer` connects to D-Wave cloud samplers and requires access to a
+  Leap account.
+- `DWave.Neal.Optimizer`, `DWave.Greedy.Optimizer`,
+  `DWave.Random.Optimizer`, and `DWave.Tabu.Optimizer` wrap the classical
+  samplers shipped in `dwave-samplers` and run locally through the
+  PythonCall/CondaPkg environment managed by the package.
+
+Switching between them only requires changing the optimizer passed to
+`Model(...)`.
+
 ## Classical Samplers
-`DWave.jl` also exposes wrappers for the classical samplers shipped in
-`dwave-samplers`:
+The classical samplers expose the same QUBO/Ising modeling interface as the QPU
+wrapper, but they do not require `DWAVE_API_TOKEN`.
 
 - `DWave.Neal.Optimizer`
 - `DWave.Greedy.Optimizer`
 - `DWave.Random.Optimizer`
 - `DWave.Tabu.Optimizer`
+
+Example:
+
+```julia
+using JuMP
+using QUBO
+using DWave
+
+model = Model(DWave.Tabu.Optimizer)
+
+set_attribute(model, "num_reads", 32)
+set_attribute(model, "timeout", 100)
+set_attribute(model, "initial_states", [
+     1  1 -1 -1
+    -1 -1  1  1
+])
+
+h = [-1, -1, 0, 0]
+J = [0 0 1 0; 0 0 0 1; 0 0 0 0; 0 0 0 0]
+
+@variable(model, s[1:4], Spin)
+@objective(model, Min, h' * s + s' * J * s)
+
+optimize!(model)
+```
+
+Sampler-specific options are forwarded as raw optimizer attributes via
+`set_attribute(model, name, value)`. For `initial_states`, the Greedy and Tabu
+wrappers accept either a single Julia vector or a matrix whose rows are initial
+states.
+
+| Optimizer | Description | Raw optimizer attributes |
+| --- | --- | --- |
+| `DWave.Neal.Optimizer` | Simulated annealing baseline. | `num_reads`, `num_sweeps`, `num_sweeps_per_beta`, `beta_range`, `beta_schedule`, `beta_schedule_type`, `seed`, `initial_states_generator`, `interrupt_function` |
+| `DWave.Greedy.Optimizer` | Steepest-descent local search. | `num_reads`, `initial_states`, `initial_states_generator`, `seed`, `large_sparse_opt` |
+| `DWave.Random.Optimizer` | Random-state sampling. | `num_reads`, `time_limit`, `max_num_samples`, `seed` |
+| `DWave.Tabu.Optimizer` | Tabu-search local search. | `initial_states`, `initial_states_generator`, `num_reads`, `seed`, `tenure`, `timeout`, `num_restarts`, `energy_threshold`, `coefficient_z_first`, `coefficient_z_restart`, `lower_bound_z` |
 
 The upstream `planar` and `tree` samplers are not wrapped yet. `PlanarGraphSolver`
 only applies to planar Ising models without linear biases, and the tree
