@@ -81,6 +81,10 @@ function jl_object(py_obj)
 end
 
 include("sampler.jl")
+include("classical.jl")
 include("neal/sampler.jl")
+include("greedy/sampler.jl")
+include("random/sampler.jl")
+include("tabu/sampler.jl")
 
 end # module
