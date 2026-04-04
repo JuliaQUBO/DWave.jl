@@ -209,7 +209,9 @@ function _init_dwave_samplers_target!(
     # Keep sibling sampler modules alive in sys.modules by clearing only the
     # target subtree, prefer the narrow import path that avoids executing
     # dwave.samplers.__init__, and only fall back to Python's standard import
-    # machinery on Windows when compiled extensions require it.
+    # machinery on Windows when compiled extensions require it. That fallback
+    # must start from a fully clean dwave.samplers tree so Python can rebuild
+    # the real package hierarchy instead of reusing our synthetic root stub.
     _clear_dwave_samplers_import_target!(target)
 
     try
@@ -217,7 +219,7 @@ function _init_dwave_samplers_target!(
         import_mode[] = :narrow
     catch err
         if Sys.iswindows()
-            _clear_dwave_samplers_import_target!(target)
+            _clear_dwave_samplers_import_state!()
             PythonCall.pycopy!(target_ref, pyimport(_dwave_samplers_import_name(target)))
             import_mode[] = :fallback
         else
