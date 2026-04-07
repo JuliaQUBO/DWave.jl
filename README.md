@@ -10,6 +10,22 @@ julia> import Pkg
 julia> Pkg.add("DWave")
 ```
 
+## Migration from DWaveNeal.jl
+`DWaveNeal.jl` is deprecated and kept only as a compatibility shim. New code
+should use `DWave.jl` directly:
+
+```julia
+julia> import Pkg
+
+julia> Pkg.add("DWave")
+
+julia> using DWave
+```
+
+If you still have an environment that depends on `DWaveNeal`, `Pkg.add("DWaveNeal")`
+continues to work, but `DWaveNeal.Optimizer` now aliases
+`DWave.Neal.Optimizer` and emits a deprecation warning on load.
+
 ## Basic Usage
 ```julia
 using JuMP
