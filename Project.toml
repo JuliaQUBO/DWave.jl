@@ -1,7 +1,7 @@
 name = "DWave"
 uuid = "4d534982-bf11-4157-9e48-fe3a62208a50"
 authors = ["pedromxavier <mail@pedro.ϵλ>", "pedroripper <pedroripper@psr-inc.com>", "bernalde <dbernaln@purdue.edu>"]
-version = "0.6.0"
+version = "0.6.1"
 
 [deps]
 Graphs = "86223c79-3864-5bf0-83f7-82e725a168b6"
@@ -16,6 +16,6 @@ Graphs           = "1"
 JSON             = "0.21"
 MathOptInterface = "1"
 QUBODrivers      = "0.3.3"
-QUBOTools        = "0.10"
+QUBOTools        = "0.10, 0.11"
 PythonCall       = "0.9.26"
 julia            = "1.10"
