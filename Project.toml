@@ -1,6 +1,6 @@
 name = "DWave"
 uuid = "4d534982-bf11-4157-9e48-fe3a62208a50"
-authors = ["pedromxavier <mail@pedro.ϵλ>", "pedroripper <pedroripper@psr-inc.com>"]
+authors = ["pedromxavier <mail@pedro.ϵλ>", "pedroripper <pedroripper@psr-inc.com>", "bernalde <dbernaln@purdue.edu>"]
 version = "0.6.0"
 
 [deps]
