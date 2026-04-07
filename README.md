@@ -10,6 +10,26 @@ julia> import Pkg
 julia> Pkg.add("DWave")
 ```
 
+## Migration from DWaveNeal.jl
+`DWaveNeal.jl` only covered the simulated annealing wrapper that now lives at
+`DWave.Neal.Optimizer` inside `DWave.jl`. The rest of `DWave.jl` provides
+additional samplers and is not part of the old `DWaveNeal.jl` API surface.
+
+For code that used `DWaveNeal.Optimizer`, install `DWave.jl` and switch to
+`DWave.Neal.Optimizer`:
+
+```julia
+julia> import Pkg
+
+julia> Pkg.add("DWave")
+
+julia> using DWave
+```
+
+If you still have an environment that depends on `DWaveNeal`, `Pkg.add("DWaveNeal")`
+continues to work, but `DWaveNeal.Optimizer` now aliases
+`DWave.Neal.Optimizer` and emits a deprecation warning on load.
+
 ## Basic Usage
 ```julia
 using JuMP
