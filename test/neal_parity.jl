@@ -322,7 +322,7 @@ Test.@testset "Neal parity with sparse support" begin
     Test.@test all(all(abs.(record.state) .== 1) for record in wrapper_records)
 end
 
-Test.@testset "Neal metadata remains backward compatible" begin
+Test.@testset "Neal metadata includes solver info" begin
     h = [0.0, -1.0]
     J = zeros(Float64, 2, 2)
     J[1, 2] = -1.0
@@ -332,5 +332,12 @@ Test.@testset "Neal metadata remains backward compatible" begin
 
     Test.@test haskey(metadata, "origin")
     Test.@test haskey(metadata, "time")
-    Test.@test !haskey(metadata, "dwave_info")
+    Test.@test haskey(metadata, "dwave_info")
+
+    info = metadata["dwave_info"]
+    Test.@test haskey(info, "beta_range")
+    Test.@test haskey(info, "beta_schedule_type")
+    Test.@test haskey(info, "timing")
+    Test.@test length(info["beta_range"]) == 2
+    Test.@test info["timing"] isa Dict
 end
