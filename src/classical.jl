@@ -259,7 +259,6 @@ function _format_classical_sampleset(
     α,
     β;
     origin::String,
-    include_dwave_info::Bool = true,
 ) where {T}
     samples = QUBOTools.Sample{T,Int}[]
     var_map = pyconvert.(Int, [var for var in results.value.variables]) .+ 1
@@ -286,11 +285,8 @@ function _format_classical_sampleset(
         "time" => Dict{String,Any}(
             "effective" => results.time,
         ),
+        "dwave_info" => jl_object(results.value.info),
     )
-
-    if include_dwave_info
-        metadata["dwave_info"] = jl_object(results.value.info)
-    end
 
     return QUBOTools.SampleSet{T,Int}(samples, metadata; sense = :min, domain = :spin)
 end

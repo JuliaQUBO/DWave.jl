@@ -71,15 +71,7 @@ function QUBODrivers.sample(sampler::Optimizer{T}) where {T}
     py_sampler = dwave_samplers.SimulatedAnnealingSampler()
     results = @timed py_sampler.sample_ising(Py(h), Py(J); params...)
 
-    return DWave._format_classical_sampleset(
-        T,
-        results,
-        n,
-        α,
-        β;
-        origin = "D-Wave Neal",
-        include_dwave_info = false,
-    )
+    return DWave._format_classical_sampleset(T, results, n, α, β; origin = "D-Wave Neal")
 end
 
 end # module Neal
