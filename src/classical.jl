@@ -89,7 +89,7 @@ When `leaf_is_package = true`, the target is treated as a package relative to
 function _import_dwave_samplers_target(target::String; leaf_is_package::Bool = false)
     locals = (
         dwave = pyimport("dwave"),
-        importlib = pyimport("importlib"),
+        importlib_util = pyimport("importlib.util"),
         pathlib = pyimport("pathlib"),
         sys = pyimport("sys"),
         target = target,
@@ -107,10 +107,10 @@ root = pathlib.Path(root)
 samplers_name = "dwave.samplers"
 samplers_dir = root / "samplers"
 
-def build_spec_or_raise(name, location, submodule_search_locations=None, importlib=importlib):
+def build_spec_or_raise(name, location, submodule_search_locations=None, importlib_util=importlib_util):
     if not location.exists():
         raise ImportError(f"Could not build module spec for {name} from {location}")
-    spec = importlib.util.spec_from_file_location(
+    spec = importlib_util.spec_from_file_location(
         name,
         location,
         submodule_search_locations=submodule_search_locations,
@@ -125,7 +125,7 @@ def ensure_package_stub(
     parent_pkg=None,
     attr_name=None,
     sys=sys,
-    importlib=importlib,
+    importlib_util=importlib_util,
     build_spec_or_raise=build_spec_or_raise,
 ):
     expected_path = [str(directory)]
@@ -136,7 +136,7 @@ def ensure_package_stub(
             directory / "__init__.py",
             submodule_search_locations=expected_path,
         )
-        pkg_mod = importlib.util.module_from_spec(pkg_spec)
+        pkg_mod = importlib_util.module_from_spec(pkg_spec)
         # Register a package stub with the real search path, but do not execute
         # __init__ because that would eagerly import unrelated samplers.
         sys.modules[name] = pkg_mod
@@ -171,7 +171,7 @@ if leaf_is_package:
         leaf_dir / "__init__.py",
         submodule_search_locations=[str(leaf_dir)],
     )
-    leaf_mod = importlib.util.module_from_spec(leaf_spec)
+    leaf_mod = importlib_util.module_from_spec(leaf_spec)
     sys.modules[leaf_name] = leaf_mod
     setattr(parent_pkg, leaf, leaf_mod)
     leaf_spec.loader.exec_module(leaf_mod)
@@ -180,7 +180,7 @@ else:
         leaf_name,
         parent_dir / f"{leaf}.py",
     )
-    leaf_mod = importlib.util.module_from_spec(leaf_spec)
+    leaf_mod = importlib_util.module_from_spec(leaf_spec)
     sys.modules[leaf_name] = leaf_mod
     setattr(parent_pkg, leaf, leaf_mod)
     leaf_spec.loader.exec_module(leaf_mod)
