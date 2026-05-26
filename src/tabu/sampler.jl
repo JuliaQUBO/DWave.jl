@@ -34,7 +34,7 @@ D-Wave's tabu-search sampler for QUBO and Ising models.
 """
 QUBODrivers.@setup Optimizer begin
     name       = "D-Wave Tabu Sampler"
-    version    = v"8.4.0" # dwave-ocean-sdk version
+    version    = v"9.3.0" # dwave-ocean-sdk version
     attributes = begin
         "initial_states"::Any = nothing
         "initial_states_generator"::String = "random"

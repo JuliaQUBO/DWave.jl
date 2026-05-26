@@ -39,7 +39,7 @@ D-Wave's Simulated Annealing Sampler for QUBO and Ising models.
 """
 QUBODrivers.@setup Optimizer begin
     name       = "D-Wave Neal Simulated Annealing Sampler"
-    version    = v"8.4.0" # dwave-ocean-sdk version
+    version    = v"9.3.0" # dwave-ocean-sdk version
     attributes = begin
         "num_reads"::Integer = 1_000
         "num_sweeps"::Integer = 1_000
