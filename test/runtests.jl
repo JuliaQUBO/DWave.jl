@@ -1,6 +1,8 @@
 import DWave
 import QUBODrivers
 
+include("compat_metadata.jl")
+
 if DWave.__auth__(; verbose = false)
     QUBODrivers.test(DWave.Optimizer; examples = true)
 else
