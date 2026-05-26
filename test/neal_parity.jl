@@ -141,6 +141,79 @@ function _wrapper_neal_error(h::Vector{Float64}, J::Matrix{Float64}; kwargs...)
     end
 end
 
+function _install_recording_neal_sampler!()
+    original = DWave.Neal.dwave_samplers.SimulatedAnnealingSampler
+
+    DWave.Neal.PythonCall.pyexec(
+        """
+def make_recording_sampler(dimod, np):
+    class RecordingSimulatedAnnealingSampler:
+        last = None
+
+        def sample(self, bqm, **params):
+            variable_order = list(bqm.variables)
+            vectors = bqm.to_numpy_vectors(variable_order=variable_order)
+            RecordingSimulatedAnnealingSampler.last = {
+                "num_variables": bqm.num_variables,
+                "num_interactions": bqm.num_interactions,
+                "variables": variable_order,
+                "rows": vectors.quadratic.row_indices.tolist(),
+                "cols": vectors.quadratic.col_indices.tolist(),
+                "weights": vectors.quadratic.biases.tolist(),
+            }
+            samples = np.ones((1, bqm.num_variables), dtype=np.int8)
+            return dimod.SampleSet.from_samples(
+                (samples, variable_order),
+                energy=[0.0],
+                vartype=dimod.SPIN,
+                info={
+                    "beta_range": [0.1, 1.0],
+                    "beta_schedule_type": params.get("beta_schedule_type", "geometric"),
+                    "timing": {},
+                },
+            )
+
+        def sample_ising(self, *args, **params):
+            raise AssertionError("Neal wrapper should call sample with a sparse BQM")
+
+    return RecordingSimulatedAnnealingSampler
+
+target_module.SimulatedAnnealingSampler = make_recording_sampler(dimod, np)
+""",
+        @__MODULE__,
+        (
+            target_module = DWave.Neal.dwave_samplers,
+            dimod = DWave.dwave_dimod,
+            np = DWave.Neal.np,
+        ),
+    )
+
+    return original
+end
+
+function _restore_neal_sampler!(original)
+    DWave.Neal.PythonCall.pyexec(
+        "target_module.SimulatedAnnealingSampler = original",
+        @__MODULE__,
+        (target_module = DWave.Neal.dwave_samplers, original = original),
+    )
+
+    return nothing
+end
+
+function _recording_neal_sampler_state()
+    record = DWave.Neal.dwave_samplers.SimulatedAnnealingSampler.last
+
+    return (
+        num_variables = DWave.Neal.PythonCall.pyconvert(Int, record["num_variables"]),
+        num_interactions = DWave.Neal.PythonCall.pyconvert(Int, record["num_interactions"]),
+        variables = DWave.Neal.PythonCall.pyconvert(Vector{Int}, record["variables"]),
+        rows = DWave.Neal.PythonCall.pyconvert(Vector{Int}, record["rows"]),
+        cols = DWave.Neal.PythonCall.pyconvert(Vector{Int}, record["cols"]),
+        weights = DWave.Neal.PythonCall.pyconvert(Vector{Float64}, record["weights"]),
+    )
+end
+
 function _reset_neal_python_modules!()
     DWave.Neal._clear_sa_import_state!()
     # A failure here means the Neal import path could not be rebuilt cleanly.
@@ -320,6 +393,33 @@ Test.@testset "Neal parity with sparse support" begin
 
     Test.@test wrapper_records == direct_records
     Test.@test all(all(abs.(record.state) .== 1) for record in wrapper_records)
+end
+
+Test.@testset "Neal wrapper builds sparse BQM input" begin
+    h = zeros(Float64, 8)
+    h[2] = -0.75
+    h[7] = 0.25
+
+    J = zeros(Float64, 8, 8)
+    J[1, 5] = -1.0
+    J[3, 4] = 0.5
+
+    original = _install_recording_neal_sampler!()
+
+    try
+        _wrapper_neal_records(h, J; num_reads = 1, num_sweeps = 10, seed = 11)
+
+        record = _recording_neal_sampler_state()
+
+        Test.@test record.num_variables == 8
+        Test.@test record.num_interactions == 2
+        Test.@test record.variables == collect(0:7)
+        Test.@test record.rows == [3, 4]
+        Test.@test record.cols == [2, 0]
+        Test.@test record.weights == [0.5, -1.0]
+    finally
+        _restore_neal_sampler!(original)
+    end
 end
 
 Test.@testset "Neal metadata includes solver info" begin

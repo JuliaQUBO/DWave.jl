@@ -27,4 +27,5 @@ Manifest.toml
 .vscode
 
 # PythonCall
-.CondaPkg.julia-depot
+.CondaPkg/
+.julia-depot/
