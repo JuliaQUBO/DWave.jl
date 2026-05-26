@@ -7,7 +7,7 @@ import Test
 const MOI = QUBODrivers.MOI
 const ClassicalRecord = NamedTuple{(:energy, :reads, :state),Tuple{Float64,Int,Tuple{Vararg{Int}}}}
 
-# These presence checks intentionally cover the dwave-samplers 8.4.0 internal
+# These presence checks intentionally cover the dwave-samplers 1.7.0 internal
 # imports exercised by each target. Greedy reaches `descent` as a side effect of
 # importing `greedy/sampler.py`, and Random must load `cyrandom`, the compiled
 # extension whose import compatibility caused issue #9.

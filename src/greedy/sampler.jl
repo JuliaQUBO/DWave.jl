@@ -27,7 +27,7 @@ D-Wave's steepest-descent sampler for QUBO and Ising models.
 """
 QUBODrivers.@setup Optimizer begin
     name       = "D-Wave Greedy Steepest Descent Sampler"
-    version    = v"8.4.0" # dwave-ocean-sdk version
+    version    = v"9.3.0" # dwave-ocean-sdk version
     attributes = begin
         # Delegate `nothing` to the upstream sampler, which infers num_reads
         # from initial_states or defaults to a single read.

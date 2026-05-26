@@ -27,7 +27,7 @@ D-Wave's random sampler for QUBO and Ising models.
 """
 QUBODrivers.@setup Optimizer begin
     name       = "D-Wave Random Sampler"
-    version    = v"8.4.0" # dwave-ocean-sdk version
+    version    = v"9.3.0" # dwave-ocean-sdk version
     attributes = begin
         "num_reads"::Union{Integer,Nothing} = nothing
         "time_limit"::Union{Real,Nothing} = nothing
