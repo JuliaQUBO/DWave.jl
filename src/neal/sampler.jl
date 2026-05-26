@@ -53,8 +53,39 @@ QUBODrivers.@setup Optimizer begin
     end
 end
 
+function _sparse_ising_bqm(n::Int, h::Dict{Int,T}, J::Dict{Tuple{Int,Int},T}) where {T}
+    linear = zeros(T, n)
+
+    for (i, v) in h
+        linear[i] = v
+    end
+
+    quadratic = collect(J)
+    # Match dimod's dense-matrix interaction order so seeded Neal runs stay stable.
+    sort!(quadratic; by = term -> (first(term)[2], first(term)[1]))
+
+    rows = Vector{Int}(undef, length(quadratic))
+    cols = Vector{Int}(undef, length(quadratic))
+    weights = Vector{T}(undef, length(quadratic))
+
+    for k in eachindex(quadratic)
+        (i, j) = first(quadratic[k])
+
+        rows[k] = j - 1
+        cols[k] = i - 1
+        weights[k] = last(quadratic[k])
+    end
+
+    return DWave.dwave_dimod.BinaryQuadraticModel.from_numpy_vectors(
+        np.array(linear),
+        (np.array(rows), np.array(cols), np.array(weights)),
+        zero(T),
+        DWave.dwave_dimod.SPIN,
+    )
+end
+
 function QUBODrivers.sample(sampler::Optimizer{T}) where {T}
-    n, h, J, α, β = QUBOTools.ising(sampler, :dense; sense = :min)
+    n, h, J, α, β = QUBOTools.ising(sampler, :dict; sense = :min)
 
     params = Dict{Symbol,Any}(
         :num_reads => MOI.get(sampler, MOI.RawOptimizerAttribute("num_reads")),
@@ -69,7 +100,7 @@ function QUBODrivers.sample(sampler::Optimizer{T}) where {T}
     )
 
     py_sampler = dwave_samplers.SimulatedAnnealingSampler()
-    results = @timed py_sampler.sample_ising(Py(h), Py(J); params...)
+    results = @timed py_sampler.sample(_sparse_ising_bqm(n, h, J); params...)
 
     return DWave._format_classical_sampleset(T, results, n, α, β; origin = "D-Wave Neal")
 end
