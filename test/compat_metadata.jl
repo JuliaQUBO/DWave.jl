@@ -13,6 +13,7 @@ Test.@testset "Compatibility metadata matches supported JuliaQUBO stack" begin
     Test.@test compat["julia"] == "1.10"
     Test.@test "0.3.3" in _compat_entries(compat["QUBODrivers"])
     Test.@test "0.4" in _compat_entries(compat["QUBODrivers"])
+    Test.@test "0.5" in _compat_entries(compat["QUBODrivers"])
     Test.@test "0.10" in _compat_entries(compat["QUBOTools"])
     Test.@test "0.11" in _compat_entries(compat["QUBOTools"])
     Test.@test "0.12" in _compat_entries(compat["QUBOTools"])
