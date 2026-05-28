@@ -1,5 +1,6 @@
 # DWave.jl
-[![QUBODRIVERS](https://img.shields.io/badge/Powered%20by-QUBODrivers.jl-%20%234063d8)](https://github.com/psrenergy/QUBODrivers.jl)
+[![CI](https://github.com/JuliaQUBO/DWave.jl/actions/workflows/ci.yml/badge.svg?branch=main)](https://github.com/JuliaQUBO/DWave.jl/actions/workflows/ci.yml?query=branch%3Amain)
+[![QUBODRIVERS](https://img.shields.io/badge/Powered%20by-QUBODrivers.jl-%20%234063d8)](https://github.com/JuliaQUBO/QUBODrivers.jl)
 
 D-Wave Quantum Annealing Interface for JuMP
 
