@@ -76,11 +76,21 @@ function __init__()
     return nothing
 end
 
+function _json_data(value)
+    if value isa AbstractDict
+        return Dict{String,Any}(string(k) => _json_data(v) for (k, v) in pairs(value))
+    elseif value isa AbstractVector
+        return Any[_json_data(v) for v in value]
+    else
+        return value
+    end
+end
+
 function jl_object(py_obj)
     # Convert Python object to JSON string, then parse it into a Julia object
     data = pyconvert(String, json.dumps(py_obj))
 
-    return JSON.parse(data)
+    return _json_data(JSON.parse(data))
 end
 
 include("sampler.jl")
