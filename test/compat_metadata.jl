@@ -27,6 +27,20 @@ Test.@testset "CI covers Julia floor and latest stable" begin
     Test.@test !occursin("1.12", workflow)
 end
 
+Test.@testset "Dependency maintenance automation follows policy" begin
+    dependabot = read(joinpath(PACKAGE_ROOT, ".github", "dependabot.yml"), String)
+    workflows = readdir(joinpath(PACKAGE_ROOT, ".github", "workflows"))
+
+    Test.@test occursin(r"(?m)^\s*-\s*package-ecosystem:\s*\"julia\"\s*$", dependabot)
+    Test.@test occursin(r"(?m)^\s*directory:\s*\"/\"\s*$", dependabot)
+    Test.@test occursin("root-julia-dependencies", dependabot)
+    Test.@test occursin(r"(?m)^\s*-\s*package-ecosystem:\s*\"github-actions\"\s*$", dependabot)
+    Test.@test occursin(r"(?m)^\s*interval:\s*\"monthly\"\s*$", dependabot)
+    Test.@test !occursin(r"(?m)^\s*directory:\s*\"/docs\"\s*$", dependabot)
+    Test.@test !occursin(r"(?m)^\s*directory:\s*\"/test\"\s*$", dependabot)
+    Test.@test !any(name -> occursin("compathelper", lowercase(name)), workflows)
+end
+
 Test.@testset "Python dependencies match audited stable stack" begin
     condapkg = TOML.parsefile(joinpath(PACKAGE_ROOT, "CondaPkg.toml"))
     pip_deps = condapkg["pip"]["deps"]
