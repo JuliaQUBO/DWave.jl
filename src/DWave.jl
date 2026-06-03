@@ -21,32 +21,35 @@ const API_TOKEN = Ref{Union{String,Nothing}}(nothing)
 
 function __auth__(; verbose :: Bool = false)
     # D-Wave API Credentials
-    if haskey(ENV, "DWAVE_API_TOKEN")
-        API_TOKEN[] = ENV["DWAVE_API_TOKEN"]
+    token = get(ENV, "DWAVE_API_TOKEN", nothing)
 
-        let client = dwave_cloud.Client(; token = API_TOKEN[])
-            try
-                client.get_solver()
-            catch e
-                API_TOKEN[] = nothing
+    if token !== nothing && !isempty(strip(token))
+        API_TOKEN[] = token
 
-                if verbose
-                    @warn """
-                    The 'DWAVE_API_TOKEN' environment variable defined, but the token is not valid.
-                    If you want to use D-Wave's cloud services, please make sure that another access method is available.
-                    
-                    For more information visit:
-                        https://docs.ocean.dwavesys.com/en/stable/overview/sapi.html
-                    """
-                end
+        try
+            client = dwave_cloud.Client(; token = API_TOKEN[])
+            client.get_solver()
+        catch e
+            API_TOKEN[] = nothing
+
+            if verbose
+                @warn """
+                The 'DWAVE_API_TOKEN' environment variable defined, but the token is not valid.
+                If you want to use D-Wave's cloud services, please make sure that another access method is available.
+                
+                For more information visit:
+                    https://docs.ocean.dwavesys.com/en/stable/overview/sapi.html
+                """
             end
         end
 
         return !isnothing(API_TOKEN[])
     else
+        API_TOKEN[] = nothing
+
         if verbose
             @warn """
-            The 'DWAVE_API_TOKEN' environment variable is not defined.
+            The 'DWAVE_API_TOKEN' environment variable is not defined or is empty.
             If you want to use D-Wave's cloud services, please make sure that another access method is available.
             
             For more information visit:
@@ -73,11 +76,21 @@ function __init__()
     return nothing
 end
 
+function _json_data(value)
+    if value isa AbstractDict
+        return Dict{String,Any}(string(k) => _json_data(v) for (k, v) in pairs(value))
+    elseif value isa AbstractVector
+        return Any[_json_data(v) for v in value]
+    else
+        return value
+    end
+end
+
 function jl_object(py_obj)
     # Convert Python object to JSON string, then parse it into a Julia object
     data = pyconvert(String, json.dumps(py_obj))
 
-    return JSON.parse(data)
+    return _json_data(JSON.parse(data))
 end
 
 include("sampler.jl")
