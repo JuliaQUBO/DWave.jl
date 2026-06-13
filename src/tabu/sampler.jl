@@ -34,12 +34,12 @@ D-Wave's tabu-search sampler for QUBO and Ising models.
 """
 QUBODrivers.@setup Optimizer begin
     name       = "D-Wave Tabu Sampler"
-    version    = v"9.3.0" # dwave-ocean-sdk version
+    version    = DWave.OCEAN_SDK_VERSION
     attributes = begin
         "initial_states"::Any = nothing
         "initial_states_generator"::String = "random"
         "num_reads"::Union{Integer,Nothing} = nothing
-        "seed"::Union{Integer,Nothing} = nothing
+        RandomSeed["seed"]::Union{Integer,Nothing} = nothing
         "tenure"::Union{Integer,Nothing} = nothing
         "timeout"::Union{Integer,Nothing} = 20
         "num_restarts"::Integer = 1_000_000
@@ -50,9 +50,14 @@ QUBODrivers.@setup Optimizer begin
     end
 end
 
+QUBODrivers.honors_final_reads(::Type{<:Optimizer}) = true
+
 function QUBODrivers.sample(sampler::Optimizer{T}) where {T}
     n, h, J, α, β = QUBOTools.ising(sampler, :dense; sense = :min)
 
+    num_reads = MOI.get(sampler, MOI.RawOptimizerAttribute("num_reads"))
+    final_num_reads = MOI.get(sampler, QUBODrivers.FinalNumberOfReads())
+    seed = MOI.get(sampler, QUBODrivers.RandomSeed())
     params = Dict{Symbol,Any}(
         :initial_states => DWave._normalize_initial_states(
             n,
@@ -62,8 +67,8 @@ function QUBODrivers.sample(sampler::Optimizer{T}) where {T}
             sampler,
             MOI.RawOptimizerAttribute("initial_states_generator"),
         ),
-        :num_reads => MOI.get(sampler, MOI.RawOptimizerAttribute("num_reads")),
-        :seed => MOI.get(sampler, MOI.RawOptimizerAttribute("seed")),
+        :num_reads => final_num_reads,
+        :seed => seed,
         :tenure => MOI.get(sampler, MOI.RawOptimizerAttribute("tenure")),
         :timeout => MOI.get(sampler, MOI.RawOptimizerAttribute("timeout")),
         :num_restarts => MOI.get(sampler, MOI.RawOptimizerAttribute("num_restarts")),
@@ -81,7 +86,18 @@ function QUBODrivers.sample(sampler::Optimizer{T}) where {T}
 
     results = @timed dwave_samplers.TabuSampler().sample_ising(Py(h), Py(J); params...)
 
-    return DWave._format_classical_sampleset(T, results, n, α, β; origin = "D-Wave Tabu")
+    return DWave._format_classical_sampleset(
+        T,
+        results,
+        n,
+        α,
+        β;
+        origin = "D-Wave Tabu",
+        algorithm_name = "D-Wave Tabu Sampler",
+        number_of_reads = num_reads,
+        final_number_of_reads = final_num_reads,
+        seed = seed,
+    )
 end
 
 end # module Tabu

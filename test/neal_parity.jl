@@ -431,9 +431,21 @@ Test.@testset "Neal metadata includes solver info" begin
     metadata = QUBOTools.metadata(sampleset)
 
     Test.@test haskey(metadata, "origin")
+    Test.@test haskey(metadata, "algorithm")
+    Test.@test haskey(metadata, "backend")
+    Test.@test haskey(metadata, "reads")
+    Test.@test haskey(metadata, "seeds")
     Test.@test haskey(metadata, "time")
     Test.@test haskey(metadata, "dwave_info")
+    Test.@test isempty(QUBODrivers.validate_metadata(metadata))
 
+    Test.@test metadata["algorithm"]["name"] == "D-Wave Neal Simulated Annealing Sampler"
+    Test.@test metadata["backend"]["name"] == "dwave-ocean-sdk"
+    Test.@test metadata["backend"]["version"] == DWave.OCEAN_SDK_VERSION
+    Test.@test metadata["reads"]["number_of_reads"] == 4
+    Test.@test metadata["reads"]["final_number_of_reads"] == 4
+    Test.@test metadata["seeds"]["sampler"] == 7
+    Test.@test metadata["time"]["effective"] > 0
     info = metadata["dwave_info"]
     Test.@test haskey(info, "beta_range")
     Test.@test haskey(info, "beta_schedule_type")

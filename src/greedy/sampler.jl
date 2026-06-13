@@ -27,23 +27,28 @@ D-Wave's steepest-descent sampler for QUBO and Ising models.
 """
 QUBODrivers.@setup Optimizer begin
     name       = "D-Wave Greedy Steepest Descent Sampler"
-    version    = v"9.3.0" # dwave-ocean-sdk version
+    version    = DWave.OCEAN_SDK_VERSION
     attributes = begin
         # Delegate `nothing` to the upstream sampler, which infers num_reads
         # from initial_states or defaults to a single read.
         "num_reads"::Union{Integer,Nothing} = nothing
         "initial_states"::Any = nothing
         "initial_states_generator"::String = "random"
-        "seed"::Union{Integer,Nothing} = nothing
+        RandomSeed["seed"]::Union{Integer,Nothing} = nothing
         "large_sparse_opt"::Bool = false
     end
 end
 
+QUBODrivers.honors_final_reads(::Type{<:Optimizer}) = true
+
 function QUBODrivers.sample(sampler::Optimizer{T}) where {T}
     n, h, J, α, β = QUBOTools.ising(sampler, :dense; sense = :min)
 
+    num_reads = MOI.get(sampler, MOI.RawOptimizerAttribute("num_reads"))
+    final_num_reads = MOI.get(sampler, QUBODrivers.FinalNumberOfReads())
+    seed = MOI.get(sampler, QUBODrivers.RandomSeed())
     params = Dict{Symbol,Any}(
-        :num_reads => MOI.get(sampler, MOI.RawOptimizerAttribute("num_reads")),
+        :num_reads => final_num_reads,
         :initial_states => DWave._normalize_initial_states(
             n,
             MOI.get(sampler, MOI.RawOptimizerAttribute("initial_states")),
@@ -52,13 +57,24 @@ function QUBODrivers.sample(sampler::Optimizer{T}) where {T}
             sampler,
             MOI.RawOptimizerAttribute("initial_states_generator"),
         ),
-        :seed => MOI.get(sampler, MOI.RawOptimizerAttribute("seed")),
+        :seed => seed,
         :large_sparse_opt => MOI.get(sampler, MOI.RawOptimizerAttribute("large_sparse_opt")),
     )
 
     results = @timed dwave_samplers.SteepestDescentSampler().sample_ising(Py(h), Py(J); params...)
 
-    return DWave._format_classical_sampleset(T, results, n, α, β; origin = "D-Wave Greedy")
+    return DWave._format_classical_sampleset(
+        T,
+        results,
+        n,
+        α,
+        β;
+        origin = "D-Wave Greedy",
+        algorithm_name = "D-Wave Greedy Steepest Descent Sampler",
+        number_of_reads = num_reads,
+        final_number_of_reads = final_num_reads,
+        seed = seed,
+    )
 end
 
 end # module Greedy

@@ -259,9 +259,14 @@ function _format_classical_sampleset(
     α,
     β;
     origin::String,
+    algorithm_name::String,
+    number_of_reads = nothing,
+    final_number_of_reads = number_of_reads,
+    seed = nothing,
 ) where {T}
     samples = QUBOTools.Sample{T,Int}[]
     var_map = pyconvert.(Int, [var for var in results.value.variables]) .+ 1
+    observed_reads = 0
 
     for row in results.value.record
         ψ = zeros(Int, n)
@@ -270,23 +275,33 @@ function _format_classical_sampleset(
             ψ[var_map[i]] = pyconvert(Int, v)
         end
 
+        reads = pyconvert(Int, row["num_occurrences"])
+        observed_reads += reads
+
         push!(
             samples,
             QUBOTools.Sample{T,Int}(
                 ψ,
                 α * (pyconvert(T, row["energy"]) + β),
-                pyconvert(Int, row["num_occurrences"]),
+                reads,
             ),
         )
     end
 
-    metadata = Dict{String,Any}(
-        "origin" => origin,
-        "time" => Dict{String,Any}(
-            "effective" => results.time,
-        ),
-        "dwave_info" => jl_object(results.value.info),
+    dwave_info = jl_object(results.value.info)
+    metadata_number_of_reads = something(number_of_reads, observed_reads)
+    metadata_final_number_of_reads = something(final_number_of_reads, observed_reads)
+    metadata = _metadata_base(
+        origin = origin,
+        algorithm_name = algorithm_name,
+        execution_mode = "local",
+        number_of_reads = metadata_number_of_reads,
+        final_number_of_reads = metadata_final_number_of_reads,
+        seeds = _seed_metadata(seed),
     )
+    metadata["time"] = Dict{String,Any}("effective" => results.time)
+    _attach_dwave_timing!(metadata, dwave_info)
+    metadata["dwave_info"] = dwave_info
 
     return QUBOTools.SampleSet{T,Int}(samples, metadata; sense = :min, domain = :spin)
 end
