@@ -116,19 +116,29 @@ function _metadata_base(;
     optimizer_evaluations = final_number_of_reads,
     seeds::Dict{String,Any} = Dict{String,Any}(),
 )
-    return QUBODrivers._sampler_metadata(
-        origin = origin,
-        algorithm_name = algorithm_name,
-        backend_name = _OCEAN_BACKEND_NAME,
-        backend_version = OCEAN_SDK_VERSION,
-        execution_mode = execution_mode,
-        optimizer_iterations = optimizer_iterations,
-        optimizer_evaluations = optimizer_evaluations,
-        number_of_reads = number_of_reads,
-        final_number_of_reads = final_number_of_reads,
-        seeds = seeds,
-        status = "locally_solved",
-        termination_status = MOI.LOCALLY_SOLVED,
+    return Dict{String,Any}(
+        "origin" => origin,
+        "algorithm" => Dict{String,Any}(
+            "name" => algorithm_name,
+        ),
+        "backend" => Dict{String,Any}(
+            "name" => _OCEAN_BACKEND_NAME,
+            "version" => OCEAN_SDK_VERSION,
+        ),
+        "execution" => Dict{String,Any}(
+            "mode" => execution_mode,
+        ),
+        "optimizer" => Dict{String,Any}(
+            "iterations" => optimizer_iterations,
+            "evaluations" => optimizer_evaluations,
+        ),
+        "reads" => Dict{String,Any}(
+            "number_of_reads" => number_of_reads,
+            "final_number_of_reads" => final_number_of_reads,
+        ),
+        "seeds" => seeds,
+        "status" => "locally_solved",
+        "termination_status" => MOI.LOCALLY_SOLVED,
     )
 end
 
