@@ -1,7 +1,10 @@
+import DWave
+import QUBODrivers
 import TOML
 import Test
 
 const PACKAGE_ROOT = normpath(joinpath(@__DIR__, ".."))
+const CompatMOI = QUBODrivers.MOI
 
 function _compat_entries(value::String)
     return strip.(split(value, ','))
@@ -11,12 +14,40 @@ Test.@testset "Compatibility metadata matches supported JuliaQUBO stack" begin
     compat = TOML.parsefile(joinpath(PACKAGE_ROOT, "Project.toml"))["compat"]
 
     Test.@test compat["julia"] == "1.10"
-    Test.@test "0.3.3" in _compat_entries(compat["QUBODrivers"])
-    Test.@test "0.4" in _compat_entries(compat["QUBODrivers"])
-    Test.@test "0.5" in _compat_entries(compat["QUBODrivers"])
-    Test.@test "0.10" in _compat_entries(compat["QUBOTools"])
-    Test.@test "0.11" in _compat_entries(compat["QUBOTools"])
-    Test.@test "0.12" in _compat_entries(compat["QUBOTools"])
+    Test.@test _compat_entries(compat["QUBODrivers"]) == ["0.6.1"]
+    Test.@test _compat_entries(compat["QUBOTools"]) == ["0.13"]
+end
+
+Test.@testset "QUBODrivers 0.6 capability traits are declared" begin
+    Test.@test !QUBODrivers.supports_seed(DWave.Optimizer)
+    Test.@test QUBODrivers.supports_seed(DWave.Neal.Optimizer)
+    Test.@test QUBODrivers.supports_seed(DWave.Greedy.Optimizer)
+    Test.@test QUBODrivers.supports_seed(DWave.Random.Optimizer)
+    Test.@test QUBODrivers.supports_seed(DWave.Tabu.Optimizer)
+
+    Test.@test QUBODrivers.honors_final_reads(DWave.Optimizer)
+    Test.@test QUBODrivers.honors_final_reads(DWave.Neal.Optimizer)
+    Test.@test QUBODrivers.honors_final_reads(DWave.Greedy.Optimizer)
+    Test.@test QUBODrivers.honors_final_reads(DWave.Random.Optimizer)
+    Test.@test QUBODrivers.honors_final_reads(DWave.Tabu.Optimizer)
+
+    Test.@test !QUBODrivers.enforces_time_limit(DWave.Optimizer)
+    Test.@test !QUBODrivers.enforces_time_limit(DWave.Neal.Optimizer)
+    Test.@test !QUBODrivers.enforces_time_limit(DWave.Greedy.Optimizer)
+    Test.@test QUBODrivers.enforces_time_limit(DWave.Random.Optimizer)
+    Test.@test !QUBODrivers.enforces_time_limit(DWave.Tabu.Optimizer)
+end
+
+Test.@testset "RandomSeed aliases existing seed attributes" begin
+    model = CompatMOI.instantiate(DWave.Neal.Optimizer; with_bridge_type = Float64)
+
+    Test.@test CompatMOI.supports(model, QUBODrivers.RandomSeed())
+    Test.@test isnothing(CompatMOI.get(model, QUBODrivers.RandomSeed()))
+
+    CompatMOI.set(model, QUBODrivers.RandomSeed(), 12_345)
+
+    Test.@test CompatMOI.get(model, QUBODrivers.RandomSeed()) == 12_345
+    Test.@test CompatMOI.get(model, CompatMOI.RawOptimizerAttribute("seed")) == 12_345
 end
 
 Test.@testset "CI covers Julia floor and latest stable" begin

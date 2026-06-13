@@ -5,7 +5,7 @@ D-Wave's Quantum Annealing Sampler for QUBO and Ising models.
 """
 QUBODrivers.@setup Optimizer begin
     name       = "D-Wave Quantum Annealing Sampler"
-    version    = v"9.3.0" # dwave-ocean-sdk version
+    version    = DWave.OCEAN_SDK_VERSION
     attributes = begin
         NumberOfReads["num_reads"]::Integer       = 100
         Sampler["sampler"]::Any                   = nothing
@@ -13,6 +13,8 @@ QUBODrivers.@setup Optimizer begin
         AnnealingTime["annealing_time"]::Float64  = 20.0
     end
 end
+
+QUBODrivers.honors_final_reads(::Type{<:Optimizer}) = true
 
 const _DWAVE_CHIP_INFO_KEYS = ("chip_id", "topology", "solver_name", "category")
 
@@ -97,8 +99,10 @@ function QUBODrivers.sample(sampler::Optimizer{T}) where {T}
     n, h, J, α, β = QUBOTools.ising(sampler, :dict; sense = :min)
 
     # Attributes
+    num_reads = MOI.get(sampler, DWave.NumberOfReads())
+    final_num_reads = MOI.get(sampler, QUBODrivers.FinalNumberOfReads())
     sample_params = Dict{Symbol,Any}(
-        :num_reads      => MOI.get(sampler, DWave.NumberOfReads()),
+        :num_reads      => final_num_reads,
         :annealing_time => MOI.get(sampler, DWave.AnnealingTime()),
     )
     dwave_sampler = MOI.get(sampler, DWave.Sampler())
@@ -149,13 +153,18 @@ function QUBODrivers.sample(sampler::Optimizer{T}) where {T}
     end
 
     # Metadata
-    metadata = Dict{String,Any}(
-        "origin" => "D-Wave",
-        "time"   => Dict{String,Any}( #
-            "effective" => results.time,
-        ),
-        "dwave_info" => dw_info,
+    metadata = DWave._metadata_base(
+        origin = "D-Wave",
+        algorithm_name = "D-Wave Quantum Annealing Sampler",
+        execution_mode = "qpu",
+        number_of_reads = num_reads,
+        final_number_of_reads = final_num_reads,
     )
+    metadata["time"] = Dict{String,Any}(
+        "effective" => DWave._dwave_effective_time(dw_info, results.time),
+    )
+    DWave._attach_dwave_timing!(metadata, dw_info)
+    metadata["dwave_info"] = dw_info
 
     return QUBOTools.SampleSet{T,Int}(samples, metadata; sense = :min, domain = :spin)
 end

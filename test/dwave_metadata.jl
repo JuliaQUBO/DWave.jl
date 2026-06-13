@@ -72,6 +72,15 @@ Test.@testset "DWave metadata includes chip info" begin
     metadata = QUBOTools.metadata(_wrapper_dwave_sampleset(_fake_embedding_sampler()))
 
     Test.@test haskey(metadata, "dwave_info")
+    Test.@test isempty(QUBODrivers.validate_metadata(metadata))
+    Test.@test metadata["algorithm"]["name"] == "D-Wave Quantum Annealing Sampler"
+    Test.@test metadata["backend"]["name"] == "dwave-ocean-sdk"
+    Test.@test metadata["backend"]["version"] == DWave.OCEAN_SDK_VERSION
+    Test.@test metadata["reads"]["number_of_reads"] == 100
+    Test.@test metadata["reads"]["final_number_of_reads"] == 100
+    Test.@test metadata["time"]["effective"] == 42 / 1_000_000
+    Test.@test metadata["time"]["dwave"]["timing"]["qpu_access_time"] == 42
+    Test.@test metadata["time"]["dwave"]["units"]["qpu_access_time"] == "microseconds"
 
     info = metadata["dwave_info"]
     Test.@test info["problem_id"] == "mock-problem"
