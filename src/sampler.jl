@@ -21,6 +21,8 @@ const _DWAVE_CHIP_INFO_KEYS = (
     "topology",
     "solver_name",
     "category",
+    # These calibrated working-graph lists are large on current QPUs, but
+    # preserving them lets WorkingGraph(metadata) reconstruct the active solver.
     "qubits",
     "couplers",
     "num_qubits",

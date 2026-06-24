@@ -183,6 +183,8 @@ function _attach_dwave_timing!(metadata::Dict{String,Any}, dwave_info::AbstractD
     return metadata
 end
 
+include("wrapper/architecture.jl")
+
 include("sampler.jl")
 include("classical.jl")
 include("neal/sampler.jl")

@@ -103,23 +103,27 @@ function WorkingGraph(metadata::AbstractDict)
     )
 end
 
-function WorkingGraph(dwave_sampler::DWave.PythonCall.Py)
-    chip_info = DWave._dwave_chip_info(dwave_sampler)
+function WorkingGraph(dwave_sampler::PythonCall.Py)
+    chip_info = _dwave_chip_info(dwave_sampler)
     isempty(chip_info) && throw(ArgumentError("D-Wave sampler does not expose working graph metadata"))
 
     return WorkingGraph(chip_info)
 end
 
 function _dnx()
-    return DWave.dwave_networkx
+    return dwave_networkx
 end
 
 function _pylist(value)
-    return DWave.PythonCall.pylist(value)
+    return PythonCall.pylist(value)
 end
 
 function _pyconvert(::Type{T}, value) where {T}
-    return DWave.PythonCall.pyconvert(T, value)
+    return PythonCall.pyconvert(T, value)
+end
+
+function _py(value)
+    return PythonCall.Py(value)
 end
 
 function _dnx_nodes_edges(graph)
@@ -303,6 +307,72 @@ function _topology_graph(nodes::Vector{Int}, edges::Vector{Tuple{Int,Int}}, node
     return graph
 end
 
+function _dnx_working_graph(arch::WorkingGraph)
+    isempty(arch.topology_shape) && return nothing
+
+    node_list = _py(arch.nodes)
+    edge_list = _py(arch.edges)
+
+    if arch.topology_type == "pegasus"
+        return _dnx().pegasus_graph(
+            arch.topology_shape[1];
+            node_list = node_list,
+            edge_list = edge_list,
+        )
+    elseif arch.topology_type == "zephyr"
+        shore_size = length(arch.topology_shape) >= 2 ? arch.topology_shape[2] : 4
+
+        return _dnx().zephyr_graph(
+            arch.topology_shape[1],
+            shore_size;
+            node_list = node_list,
+            edge_list = edge_list,
+        )
+    end
+
+    return nothing
+end
+
+function _dnx_layout_points(layout, nodes::Vector{Int})
+    points = Vector{QUBOTools.Point{2,Float64}}(undef, length(nodes))
+
+    for (index, node) in pairs(nodes)
+        position = _pyconvert(Tuple, layout[node])
+
+        points[index] = QUBOTools.Point{2,Float64}(
+            Float64(position[1]),
+            Float64(position[2]),
+        )
+    end
+
+    return points
+end
+
+function _pegasus_points(arch::Pegasus)
+    graph = _dnx().pegasus_graph(arch.size)
+
+    return _dnx_layout_points(_dnx().pegasus_layout(graph), arch.nodes)
+end
+
+function _zephyr_points(arch::Zephyr)
+    graph = _dnx().zephyr_graph(arch.size, arch.shore_size)
+
+    return _dnx_layout_points(_dnx().zephyr_layout(graph), arch.nodes)
+end
+
+function _working_graph_layout_points(arch::WorkingGraph)
+    graph = _dnx_working_graph(arch)
+    graph === nothing && return nothing
+
+    if arch.topology_type == "pegasus"
+        return _dnx_layout_points(_dnx().pegasus_layout(graph), arch.nodes)
+    elseif arch.topology_type == "zephyr"
+        return _dnx_layout_points(_dnx().zephyr_layout(graph), arch.nodes)
+    end
+
+    return nothing
+end
+
 function _coordinate_point(coordinate::Tuple)
     if length(coordinate) >= 2
         return QUBOTools.Point{2,Float64}(Float64(coordinate[2]), Float64(coordinate[1]))
@@ -322,6 +392,9 @@ function _coordinate_points(nodes::Vector{Int}, coordinates::AbstractDict)
 end
 
 function _working_graph_points(arch::WorkingGraph, graph)
+    points = _working_graph_layout_points(arch)
+    points === nothing || return points
+
     if all(node -> haskey(arch.coordinates, node), arch.nodes)
         return _coordinate_points(arch.nodes, arch.coordinates)
     end
@@ -329,20 +402,20 @@ function _working_graph_points(arch::WorkingGraph, graph)
     return QUBOTools.geometry(graph)
 end
 
-function QUBOTools.topology(arch::Union{Pegasus,Zephyr})
+function QUBOTools.topology(arch::Union{Pegasus,Zephyr,WorkingGraph})
     return _topology_graph(arch.nodes, arch.edges, arch.node_indices)
 end
 
-function QUBOTools.geometry(arch::Union{Pegasus,Zephyr})
-    return _coordinate_points(arch.nodes, arch.coordinates)
+function QUBOTools.geometry(arch::Pegasus)
+    return _pegasus_points(arch)
+end
+
+function QUBOTools.geometry(arch::Zephyr)
+    return _zephyr_points(arch)
 end
 
 function QUBOTools.layout(arch::Union{Pegasus,Zephyr})
     return QUBOTools.Layout(QUBOTools.topology(arch), QUBOTools.geometry(arch))
-end
-
-function QUBOTools.topology(arch::WorkingGraph)
-    return _topology_graph(arch.nodes, arch.edges, arch.node_indices)
 end
 
 function QUBOTools.geometry(arch::WorkingGraph)
