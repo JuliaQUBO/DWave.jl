@@ -16,7 +16,15 @@ end
 
 QUBODrivers.honors_final_reads(::Type{<:Optimizer}) = true
 
-const _DWAVE_CHIP_INFO_KEYS = ("chip_id", "topology", "solver_name", "category")
+const _DWAVE_CHIP_INFO_KEYS = (
+    "chip_id",
+    "topology",
+    "solver_name",
+    "category",
+    "qubits",
+    "couplers",
+    "num_qubits",
+)
 
 function _maybe_getproperty(object, name::Symbol)
     try
