@@ -16,6 +16,9 @@ class FakeEmbeddingSampler:
             "chip_id": "mock-chip",
             "topology": {"type": "zephyr", "shape": [4, 4]},
             "category": "qpu",
+            "qubits": [0, 1, 4],
+            "couplers": [[0, 1], [1, 4]],
+            "num_qubits": 3,
         }
         self.child.solver = type("FakeSolver", (), {"name": "Advantage_system6.4"})()
 
@@ -93,4 +96,7 @@ Test.@testset "DWave metadata includes chip info" begin
     Test.@test chip_info["solver_name"] == "Advantage_system6.4"
     Test.@test chip_info["topology"]["type"] == "zephyr"
     Test.@test chip_info["topology"]["shape"] == Any[4, 4]
+    Test.@test chip_info["qubits"] == Any[0, 1, 4]
+    Test.@test chip_info["couplers"] == Any[Any[0, 1], Any[1, 4]]
+    Test.@test chip_info["num_qubits"] == 3
 end

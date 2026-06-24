@@ -236,7 +236,3 @@ end
 function QUBOTools.layout(arch::Chimera)
     return QUBOTools.Layout(QUBOTools.topology(arch), QUBOTools.geometry(arch))
 end
-
-function layout(arch::Chimera)
-    return QUBOTools.layout(arch)
-end

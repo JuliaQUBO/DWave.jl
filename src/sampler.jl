@@ -16,7 +16,17 @@ end
 
 QUBODrivers.honors_final_reads(::Type{<:Optimizer}) = true
 
-const _DWAVE_CHIP_INFO_KEYS = ("chip_id", "topology", "solver_name", "category")
+const _DWAVE_CHIP_INFO_KEYS = (
+    "chip_id",
+    "topology",
+    "solver_name",
+    "category",
+    # These calibrated working-graph lists are large on current QPUs, but
+    # preserving them lets WorkingGraph(metadata) reconstruct the active solver.
+    "qubits",
+    "couplers",
+    "num_qubits",
+)
 
 function _maybe_getproperty(object, name::Symbol)
     try

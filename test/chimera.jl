@@ -6,12 +6,7 @@ import Test
 
 const Graphs = DWave.Graphs
 
-abstract type DWaveArchitecture <: QUBOTools.AbstractArchitecture end
-
-include(joinpath(@__DIR__, "..", "src", "wrapper", "device.jl"))
-include(joinpath(@__DIR__, "..", "src", "wrapper", "chimera.jl"))
-
-function _edge_coordinate_pairs(arch::Chimera)
+function _edge_coordinate_pairs(arch::DWave.Chimera)
     coordinates = arch.coordinates
 
     return Set(
@@ -25,8 +20,9 @@ function _edge_coordinate_pairs(arch::Chimera)
 end
 
 Test.@testset "Chimera supports rectangular topology coordinates" begin
-    arch = Chimera(2, 3)
+    arch = DWave.Chimera(2, 3)
 
+    Test.@test isdefined(DWave, :Chimera)
     Test.@test arch.grid_size == (2, 3)
     Test.@test arch.cell_size == 8
     Test.@test length(arch.coordinates) == 2 * 3 * 8
@@ -42,12 +38,12 @@ Test.@testset "Chimera supports rectangular topology coordinates" begin
 end
 
 Test.@testset "Chimera layout returns topology graph and geometry" begin
-    arch = Chimera(2, 3)
+    arch = DWave.Chimera(2, 3)
     arch_layout = QUBOTools.layout(arch)
     graph = QUBOTools.topology(arch_layout)
     points = QUBOTools.geometry(arch_layout)
 
-    Test.@test layout(arch) isa QUBOTools.Layout
+    Test.@test QUBOTools.layout(arch) isa QUBOTools.Layout
     Test.@test Graphs.nv(graph) == 48
     Test.@test Graphs.ne(graph) == 124
     Test.@test length(points) == 48
@@ -65,10 +61,10 @@ Test.@testset "Chimera layout returns topology graph and geometry" begin
 end
 
 Test.@testset "Chimera validates dimensions" begin
-    Test.@test_throws ArgumentError Chimera(0, 2)
-    Test.@test_throws ArgumentError Chimera(2, 0)
-    Test.@test_throws ArgumentError Chimera(2, 2; cell_size = 7)
-    Test.@test_throws ArgumentError Chimera(2, 3; degree = 2)
+    Test.@test_throws ArgumentError DWave.Chimera(0, 2)
+    Test.@test_throws ArgumentError DWave.Chimera(2, 0)
+    Test.@test_throws ArgumentError DWave.Chimera(2, 2; cell_size = 7)
+    Test.@test_throws ArgumentError DWave.Chimera(2, 3; degree = 2)
 end
 
 Test.@testset "Chimera device scales coefficients into integer backend" begin
@@ -80,9 +76,10 @@ Test.@testset "Chimera device scales coefficients into integer backend" begin
         domain = :spin,
         start = Dict(:a => 1, :b => -1),
     )
-    dev = DWaveDevice(Chimera(1, 1), model)
+    dev = DWave.DWaveDevice(DWave.Chimera(1, 1), model)
     backend = QUBOTools.backend(dev)
 
+    Test.@test isdefined(DWave, :DWaveDevice)
     Test.@test dev.factor == 200_000.0
     Test.@test Dict(QUBOTools.linear_terms(backend)) == Dict(1 => 50_000)
     Test.@test Dict(QUBOTools.quadratic_terms(backend)) == Dict((1, 2) => -100_000)
