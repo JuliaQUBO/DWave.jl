@@ -103,6 +103,13 @@ function WorkingGraph(metadata::AbstractDict)
     )
 end
 
+function WorkingGraph(dwave_sampler::DWave.PythonCall.Py)
+    chip_info = DWave._dwave_chip_info(dwave_sampler)
+    isempty(chip_info) && throw(ArgumentError("D-Wave sampler does not expose working graph metadata"))
+
+    return WorkingGraph(chip_info)
+end
+
 function _dnx()
     return DWave.dwave_networkx
 end

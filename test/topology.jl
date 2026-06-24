@@ -87,6 +87,25 @@ Test.@testset "WorkingGraph represents calibrated solver subsets" begin
     Test.@test !((3, 28) in _node_edge_pairs(arch))
 end
 
+if DWave.__auth__(; verbose = false)
+    Test.@testset "WorkingGraph builds from live D-Wave sampler metadata" begin
+        sampler = DWave.dwave_system.DWaveSampler(; token = ENV["DWAVE_API_TOKEN"])
+        arch = WorkingGraph(sampler)
+        arch_layout = QUBOTools.layout(arch)
+        graph = QUBOTools.topology(arch_layout)
+        points = QUBOTools.geometry(arch_layout)
+
+        Test.@test arch.topology_type in ("pegasus", "zephyr")
+        Test.@test !isempty(arch.topology_shape)
+        Test.@test !isempty(arch.nodes)
+        Test.@test !isempty(arch.edges)
+        Test.@test Graphs.nv(graph) == length(arch.nodes)
+        Test.@test Graphs.ne(graph) == length(arch.edges)
+        Test.@test length(points) == length(arch.nodes)
+        Test.@test length(arch.coordinates) == length(arch.nodes)
+    end
+end
+
 Test.@testset "Topology wrappers validate inputs" begin
     Test.@test_throws ArgumentError Pegasus(0)
     Test.@test_throws ArgumentError Zephyr(0)
