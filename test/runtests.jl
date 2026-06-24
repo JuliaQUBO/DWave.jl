@@ -18,3 +18,4 @@ QUBODrivers.test(DWave.Tabu.Optimizer; examples = true, benchmark_conformance = 
 include("neal_parity.jl")
 include("classical_parity.jl")
 include("dwave_metadata.jl")
+include("chimera.jl")
