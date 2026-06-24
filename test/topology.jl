@@ -30,7 +30,7 @@ Test.@testset "Pegasus layout uses Ocean topology data" begin
     points = QUBOTools.geometry(arch_layout)
 
     Test.@test isdefined(DWave, :Pegasus)
-    Test.@test DWave.layout(arch) isa QUBOTools.Layout
+    Test.@test QUBOTools.layout(arch) isa QUBOTools.Layout
     Test.@test arch.size == 2
     Test.@test Graphs.nv(graph) == 40
     Test.@test Graphs.ne(graph) == 164
@@ -50,7 +50,7 @@ Test.@testset "Zephyr layout uses Ocean topology data" begin
     points = QUBOTools.geometry(arch_layout)
 
     Test.@test isdefined(DWave, :Zephyr)
-    Test.@test DWave.layout(arch) isa QUBOTools.Layout
+    Test.@test QUBOTools.layout(arch) isa QUBOTools.Layout
     Test.@test arch.size == 2
     Test.@test arch.shore_size == 4
     Test.@test Graphs.nv(graph) == 160
@@ -81,7 +81,7 @@ Test.@testset "WorkingGraph represents calibrated solver subsets" begin
     points = QUBOTools.geometry(arch_layout)
 
     Test.@test isdefined(DWave, :WorkingGraph)
-    Test.@test DWave.layout(arch) isa QUBOTools.Layout
+    Test.@test QUBOTools.layout(arch) isa QUBOTools.Layout
     Test.@test arch.topology_type == "pegasus"
     Test.@test arch.topology_shape == [2]
     Test.@test arch.nodes == [2, 3, 28]
@@ -93,6 +93,24 @@ Test.@testset "WorkingGraph represents calibrated solver subsets" begin
     Test.@test (2, 3) in _node_edge_pairs(arch)
     Test.@test (2, 28) in _node_edge_pairs(arch)
     Test.@test !((3, 28) in _node_edge_pairs(arch))
+end
+
+Test.@testset "WorkingGraph unknown topology uses graph geometry fallback" begin
+    arch = DWave.WorkingGraph(
+        [1, 2, 3],
+        Any[Any[1, 2], Any[2, 3]];
+        topology = Dict{String,Any}("type" => "custom", "shape" => Any[1]),
+        coordinates = Dict{Int,Any}(
+            1 => (0, 0, 0),
+            2 => (0, 0, 1),
+            3 => (0, 1, 0),
+        ),
+    )
+    arch_layout = QUBOTools.layout(arch)
+    points = QUBOTools.geometry(arch_layout)
+
+    Test.@test length(points) == 3
+    Test.@test _point_count(points) == 3
 end
 
 if DWave.__auth__(; verbose = false)

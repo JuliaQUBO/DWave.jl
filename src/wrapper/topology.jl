@@ -373,31 +373,9 @@ function _working_graph_layout_points(arch::WorkingGraph)
     return nothing
 end
 
-function _coordinate_point(coordinate::Tuple)
-    if length(coordinate) >= 2
-        return QUBOTools.Point{2,Float64}(Float64(coordinate[2]), Float64(coordinate[1]))
-    end
-
-    return QUBOTools.Point{2,Float64}(0.0, 0.0)
-end
-
-function _coordinate_points(nodes::Vector{Int}, coordinates::AbstractDict)
-    points = Vector{QUBOTools.Point{2,Float64}}(undef, length(nodes))
-
-    for (index, node) in pairs(nodes)
-        points[index] = _coordinate_point(coordinates[node])
-    end
-
-    return points
-end
-
 function _working_graph_points(arch::WorkingGraph, graph)
     points = _working_graph_layout_points(arch)
     points === nothing || return points
-
-    if all(node -> haskey(arch.coordinates, node), arch.nodes)
-        return _coordinate_points(arch.nodes, arch.coordinates)
-    end
 
     return QUBOTools.geometry(graph)
 end
@@ -426,8 +404,4 @@ function QUBOTools.layout(arch::WorkingGraph)
     graph = QUBOTools.topology(arch)
 
     return QUBOTools.Layout(graph, _working_graph_points(arch, graph))
-end
-
-function layout(arch::DWaveHardwareTopology)
-    return QUBOTools.layout(arch)
 end
