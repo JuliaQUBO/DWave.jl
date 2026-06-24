@@ -58,10 +58,10 @@ Test.@testset "Chimera layout returns topology graph and geometry" begin
 
     Test.@test ((0, 0, 0, 0), (0, 0, 1, 0)) in edge_pairs
     Test.@test ((0, 0, 0, 0), (0, 0, 1, 3)) in edge_pairs
-    Test.@test ((0, 0, 0, 0), (0, 1, 0, 0)) in edge_pairs
-    Test.@test ((0, 0, 1, 0), (1, 0, 1, 0)) in edge_pairs
-    Test.@test !(((0, 0, 0, 0), (1, 0, 0, 0)) in edge_pairs)
-    Test.@test !(((0, 0, 1, 0), (0, 1, 1, 0)) in edge_pairs)
+    Test.@test ((0, 0, 0, 0), (1, 0, 0, 0)) in edge_pairs
+    Test.@test ((0, 0, 1, 0), (0, 1, 1, 0)) in edge_pairs
+    Test.@test !(((0, 0, 0, 0), (0, 1, 0, 0)) in edge_pairs)
+    Test.@test !(((0, 0, 1, 0), (1, 0, 1, 0)) in edge_pairs)
 end
 
 Test.@testset "Chimera validates dimensions" begin

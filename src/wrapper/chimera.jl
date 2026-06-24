@@ -182,22 +182,22 @@ function _chimera_graph(arch::Chimera)
             )
         end
 
-        if y < n - 1
-            for i in 0:(shore_size - 1)
-                Graphs.add_edge!(
-                    graph,
-                    _chimera_index(x, y, 0, i, n, shore_size),
-                    _chimera_index(x, y + 1, 0, i, n, shore_size),
-                )
-            end
-        end
-
         if x < m - 1
             for i in 0:(shore_size - 1)
                 Graphs.add_edge!(
                     graph,
+                    _chimera_index(x, y, 0, i, n, shore_size),
+                    _chimera_index(x + 1, y, 0, i, n, shore_size),
+                )
+            end
+        end
+
+        if y < n - 1
+            for i in 0:(shore_size - 1)
+                Graphs.add_edge!(
+                    graph,
                     _chimera_index(x, y, 1, i, n, shore_size),
-                    _chimera_index(x + 1, y, 1, i, n, shore_size),
+                    _chimera_index(x, y + 1, 1, i, n, shore_size),
                 )
             end
         end
