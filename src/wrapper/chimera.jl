@@ -26,10 +26,6 @@ There is an edge from ``v_p`` to ``v_q`` if at least one of the following holds:
 - ``|x_p - x_q| = 1 \wedge y_p = y_q \wedge o_p = o_q = 0 \wedge i_p = i_q``
 - ``x_p = x_q \wedge |y_p-y_q| = 1 \wedge o_p = o_q = 1 \wedge i_p = i_q``
 
-The legacy HFS/alex1770-style writer is currently disabled; see #48. Its
-printer emits these coordinate labels unchanged, so a revived writer would
-preserve this row/column, shore-index convention.
-
 [^alex1770]:
     `alex1770`'s QUBO-Chimera Git Repository [{git}](https://github.com/alex1770/QUBO-Chimera)
 

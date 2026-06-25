@@ -6,6 +6,11 @@ import Test
 
 const Graphs = DWave.Graphs
 
+Test.@testset "Legacy HFS writer is removed" begin
+    Test.@test !isdir(joinpath(pkgdir(DWave), "src", "wrapper", "hfs"))
+    Test.@test !isdefined(DWave, :HFS)
+end
+
 function _edge_coordinate_pairs(arch::DWave.Chimera)
     coordinates = arch.coordinates
 
