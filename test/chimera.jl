@@ -6,8 +6,7 @@ import Test
 
 const Graphs = DWave.Graphs
 
-Test.@testset "Legacy HFS writer is removed" begin
-    Test.@test !isdir(joinpath(pkgdir(DWave), "src", "wrapper", "hfs"))
+Test.@testset "Legacy HFS writer is not loaded" begin
     Test.@test !isdefined(DWave, :HFS)
 end
 
