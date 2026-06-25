@@ -6,6 +6,10 @@ import Test
 
 const Graphs = DWave.Graphs
 
+Test.@testset "Legacy HFS writer is not loaded" begin
+    Test.@test !isdefined(DWave, :HFS)
+end
+
 function _edge_coordinate_pairs(arch::DWave.Chimera)
     coordinates = arch.coordinates
 
