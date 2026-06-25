@@ -19,6 +19,18 @@ function _edge_coordinate_pairs(arch::DWave.Chimera)
     )
 end
 
+function _dnx_chimera_edge_coordinate_pairs(arch::DWave.Chimera)
+    m, n = arch.grid_size
+    shore_size = arch.cell_size ÷ 2
+    graph = DWave.dwave_networkx.chimera_graph(m, n, shore_size; coordinates = true)
+    edges = DWave.PythonCall.pyconvert(
+        Vector{Tuple{NTuple{4,Int},NTuple{4,Int}}},
+        DWave.PythonCall.pylist(graph.edges()),
+    )
+
+    return Set(src <= dst ? (src, dst) : (dst, src) for (src, dst) in edges)
+end
+
 Test.@testset "Chimera supports rectangular topology coordinates" begin
     arch = DWave.Chimera(2, 3)
 
@@ -58,6 +70,12 @@ Test.@testset "Chimera layout returns topology graph and geometry" begin
     Test.@test ((0, 0, 1, 0), (0, 1, 1, 0)) in edge_pairs
     Test.@test !(((0, 0, 0, 0), (0, 1, 0, 0)) in edge_pairs)
     Test.@test !(((0, 0, 1, 0), (1, 0, 1, 0)) in edge_pairs)
+end
+
+Test.@testset "Chimera topology matches dwave-networkx coordinate graph" begin
+    arch = DWave.Chimera(2, 3)
+
+    Test.@test _edge_coordinate_pairs(arch) == _dnx_chimera_edge_coordinate_pairs(arch)
 end
 
 Test.@testset "Chimera validates dimensions" begin
