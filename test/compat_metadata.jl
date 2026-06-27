@@ -77,7 +77,32 @@ Test.@testset "Python dependencies match audited stable stack" begin
     pip_deps = condapkg["pip"]["deps"]
 
     Test.@test condapkg["deps"]["python"] == ">=3.11,<=3.13"
-    Test.@test pip_deps["numpy"] == "==2.4.6"
+    Test.@test !haskey(pip_deps, "numpy")
     Test.@test pip_deps["dwave-ocean-sdk"] == "==9.3.0"
     Test.@test pip_deps["dwave_networkx"] == "==0.8.18"
+end
+
+Test.@testset "Python dependency policy allows shared QiskitOpt benchmark env" begin
+    condapkg = TOML.parsefile(joinpath(PACKAGE_ROOT, "CondaPkg.toml"))
+    pip_deps = condapkg["pip"]["deps"]
+
+    qiskitopt_pip_deps = Dict(
+        "numpy" => "~=2.2.0",
+        "qiskit" => "~=2.3.0",
+        "qiskit-aer" => "~=0.17.0",
+        "qiskit-ibm-runtime" => "~=0.46.0",
+        "qiskit-optimization" => "~=0.7.0",
+        "scipy" => "~=1.15.0",
+    )
+
+    merged_pip_deps = copy(qiskitopt_pip_deps)
+
+    for (package, spec) in pip_deps
+        Test.@test !haskey(merged_pip_deps, package)
+        merged_pip_deps[package] = spec
+    end
+
+    Test.@test merged_pip_deps["numpy"] == "~=2.2.0"
+    Test.@test merged_pip_deps["dwave-ocean-sdk"] == "==9.3.0"
+    Test.@test merged_pip_deps["dwave_networkx"] == "==0.8.18"
 end
