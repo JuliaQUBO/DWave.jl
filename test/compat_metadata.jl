@@ -77,35 +77,59 @@ Test.@testset "Python dependencies match audited stable stack" begin
     pip_deps = condapkg["pip"]["deps"]
 
     Test.@test condapkg["deps"]["python"] == ">=3.11,<=3.13"
-    Test.@test pip_deps["numpy"] == "~=2.2.0"
+    Test.@test !haskey(pip_deps, "numpy")
     Test.@test pip_deps["dwave-ocean-sdk"] == "==9.3.0"
     Test.@test pip_deps["dwave_networkx"] == "==0.8.18"
 end
 
-Test.@testset "Python dependency policy allows shared QiskitOpt benchmark env" begin
+Test.@testset "Python dependency policy allows shared benchmark env" begin
     condapkg = TOML.parsefile(joinpath(PACKAGE_ROOT, "CondaPkg.toml"))
+    conda_deps = condapkg["deps"]
     pip_deps = condapkg["pip"]["deps"]
 
-    # Mirrors QiskitOpt v0.7.0's CondaPkg.toml for JuliaQUBO/QUBOBenchmarks.jl#19.
+    # Mirrors the registered Python-backed benchmark tier from issue #55:
+    # CIMOptimizer v0.2.2, QiskitOpt v0.7.1, and PySA v0.4.2.
+    cimoptimizer_conda_deps = Dict(
+        "python" => ">=3.10,<3.12",
+        "pytorch-cpu" => ">=2.0.1",
+    )
+    cimoptimizer_pip_deps = Dict("cim-optimizer" => "==1.0.4")
     qiskitopt_pip_deps = Dict(
-        "numpy" => "~=2.2.0",
         "qiskit" => "~=2.3.0",
         "qiskit-aer" => "~=0.17.0",
         "qiskit-ibm-runtime" => "~=0.46.0",
         "qiskit-optimization" => "~=0.7.0",
         "scipy" => "~=1.15.0",
     )
-
-    overlapping_packages = Set(
-        intersect(collect(keys(pip_deps)), collect(keys(qiskitopt_pip_deps))),
+    pysa_pip_deps = Dict(
+        "numpy" => ">=1.20.0",
+        "pysa" => "@ git+https://github.com/nasa/pysa@v0.1.0",
     )
 
-    Test.@test overlapping_packages == Set(["numpy"])
-    Test.@test pip_deps["numpy"] == qiskitopt_pip_deps["numpy"]
+    overlapping_pip_packages = Set(
+        intersect(
+            collect(keys(pip_deps)),
+            union(
+                collect(keys(cimoptimizer_pip_deps)),
+                collect(keys(qiskitopt_pip_deps)),
+                collect(keys(pysa_pip_deps)),
+            ),
+        ),
+    )
+    overlapping_cimoptimizer_conda_packages = Set(
+        intersect(collect(keys(conda_deps)), collect(keys(cimoptimizer_conda_deps))),
+    )
 
-    merged_pip_deps = merge(qiskitopt_pip_deps, pip_deps)
+    Test.@test overlapping_cimoptimizer_conda_packages == Set(["python"])
+    Test.@test !haskey(conda_deps, "numpy")
+    Test.@test !haskey(conda_deps, "pytorch-cpu")
+    Test.@test !haskey(pip_deps, "numpy")
+    Test.@test overlapping_pip_packages == Set{String}()
 
-    Test.@test merged_pip_deps["numpy"] == "~=2.2.0"
+    merged_pip_deps = merge(cimoptimizer_pip_deps, qiskitopt_pip_deps, pysa_pip_deps, pip_deps)
+
+    Test.@test merged_pip_deps["numpy"] == ">=1.20.0"
     Test.@test merged_pip_deps["dwave-ocean-sdk"] == "==9.3.0"
     Test.@test merged_pip_deps["dwave_networkx"] == "==0.8.18"
+    Test.@test merged_pip_deps["cim-optimizer"] == "==1.0.4"
 end
