@@ -84,9 +84,11 @@ end
 
 Test.@testset "Python dependency policy allows shared benchmark env" begin
     condapkg = TOML.parsefile(joinpath(PACKAGE_ROOT, "CondaPkg.toml"))
+    conda_deps = condapkg["deps"]
     pip_deps = condapkg["pip"]["deps"]
 
-    # Mirrors the registered Python-backed benchmark tier from issue #55.
+    # Mirrors the registered Python-backed benchmark tier from issue #55:
+    # CIMOptimizer v0.2.2, QiskitOpt v0.7.1, and PySA v0.4.2.
     cimoptimizer_conda_deps = Dict(
         "python" => ">=3.10,<3.12",
         "pytorch-cpu" => ">=2.0.1",
@@ -114,8 +116,13 @@ Test.@testset "Python dependency policy allows shared benchmark env" begin
             ),
         ),
     )
+    overlapping_cimoptimizer_conda_packages = Set(
+        intersect(collect(keys(conda_deps)), collect(keys(cimoptimizer_conda_deps))),
+    )
 
-    Test.@test haskey(cimoptimizer_conda_deps, "pytorch-cpu")
+    Test.@test overlapping_cimoptimizer_conda_packages == Set(["python"])
+    Test.@test !haskey(conda_deps, "numpy")
+    Test.@test !haskey(conda_deps, "pytorch-cpu")
     Test.@test !haskey(pip_deps, "numpy")
     Test.@test overlapping_pip_packages == Set{String}()
 
