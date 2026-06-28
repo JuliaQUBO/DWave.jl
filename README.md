@@ -123,6 +123,14 @@ current `QUBODrivers` interface cleanly.
 ## API Token
 To use D-Wave's QPU it is necessary to obtain an API Token from [Leap](https://cloud.dwavesys.com/leap/).
 
+## Development Checks
+To verify that DWave can share a CondaPkg environment with the other
+Python-backed JuliaQUBO benchmark drivers, run:
+
+```sh
+julia --startup-file=no test/shared_condapkg_resolve.jl
+```
+
 **Disclaimer:** _The D-Wave wrapper for Julia is not officially supported by D-Wave Systems. If you are a commercial customer interested in official support for Julia from D-Wave, let them know!_
 
 **Note**: _If you are using [DWave.jl](https://github.com/JuliaQUBO/DWave.jl) in your project, we recommend you to include the `.CondaPkg` entry in your `.gitignore` file. The PythonCall module will place a lot of files in this folder when building its Python environment._
