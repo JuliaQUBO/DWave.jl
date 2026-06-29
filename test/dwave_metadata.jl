@@ -45,7 +45,54 @@ sampler = FakeEmbeddingSampler()
     return ans.sampler
 end
 
-function _wrapper_dwave_sampleset(sampler)
+function _fake_return_embedding_sampler()
+    ans = DWave.PythonCall.pyexec(
+        @NamedTuple{sampler::DWave.PythonCall.Py,calls::DWave.PythonCall.Py},
+        """
+class FakeEmbeddingSampler:
+    def __init__(self):
+        self.calls = []
+        self.child = type("FakeChildSampler", (), {})()
+        self.child.properties = {
+            "chip_id": "mock-chip",
+            "topology": {"type": "pegasus", "shape": [16]},
+            "category": "qpu",
+            "qubits": [3, 4, 5],
+            "couplers": [[3, 4], [4, 5]],
+            "num_qubits": 3,
+        }
+        self.child.solver = type("FakeSolver", (), {"name": "mock-solver"})()
+
+    def sample_ising(self, h, J, **params):
+        self.calls.append(params)
+        info = {
+            "problem_id": "mock-problem",
+            "timing": {"qpu_access_time": 42},
+        }
+        if params.get("return_embedding"):
+            info["embedding_context"] = {"embedding": {1: (3, 4), 2: (5,)}}
+
+        return type(
+            "FakeSampleSet",
+            (),
+            {
+                "variables": [1, 2],
+                "record": [([1, -1], -1.25, 3)],
+                "info": info,
+            },
+        )()
+
+sampler = FakeEmbeddingSampler()
+calls = sampler.calls
+""",
+        @__MODULE__,
+        (),
+    )
+
+    return ans
+end
+
+function _wrapper_dwave_sampleset(sampler; return_embedding::Bool = false)
     model = MOI.instantiate(DWave.Optimizer; with_bridge_type = Float64)
     variables, _ = MOI.add_constrained_variables(model, fill(QUBODrivers.Spin(), 2))
 
@@ -65,6 +112,7 @@ function _wrapper_dwave_sampleset(sampler)
         ),
     )
     MOI.set(model, MOI.RawOptimizerAttribute("sampler"), sampler)
+    MOI.set(model, MOI.RawOptimizerAttribute("return_embedding"), return_embedding)
 
     MOI.optimize!(model)
 
@@ -99,4 +147,17 @@ Test.@testset "DWave metadata includes chip info" begin
     Test.@test chip_info["qubits"] == Any[0, 1, 4]
     Test.@test chip_info["couplers"] == Any[Any[0, 1], Any[1, 4]]
     Test.@test chip_info["num_qubits"] == 3
+end
+
+Test.@testset "DWave metadata exposes returned embeddings for supplied samplers" begin
+    ans = _fake_return_embedding_sampler()
+    sampleset = _wrapper_dwave_sampleset(ans.sampler; return_embedding = true)
+    metadata = QUBOTools.metadata(sampleset)
+    calls = DWave.jl_object(ans.calls)
+
+    Test.@test calls[1]["return_embedding"] == true
+    Test.@test DWave.embedding(sampleset) == Dict(1 => [3, 4], 2 => [5])
+    Test.@test DWave.embedding(metadata) == Dict(1 => [3, 4], 2 => [5])
+    Test.@test metadata["dwave_info"]["embedding_context"]["embedding"] ==
+        Dict(1 => [3, 4], 2 => [5])
 end
