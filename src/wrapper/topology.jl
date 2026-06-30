@@ -333,6 +333,169 @@ function _dnx_working_graph(arch::WorkingGraph)
     return nothing
 end
 
+function _dnx_hardware_graph(arch::Pegasus)
+    return _dnx().pegasus_graph(
+        arch.size;
+        node_list = _py(arch.nodes),
+        edge_list = _py(arch.edges),
+    )
+end
+
+function _dnx_hardware_graph(arch::Zephyr)
+    return _dnx().zephyr_graph(
+        arch.size,
+        arch.shore_size;
+        node_list = _py(arch.nodes),
+        edge_list = _py(arch.edges),
+    )
+end
+
+function _dnx_hardware_graph(arch::WorkingGraph)
+    graph = _dnx_working_graph(arch)
+
+    graph === nothing && throw(ArgumentError(
+        "D-Wave drawing helpers require Pegasus or Zephyr topology metadata with a nonempty shape",
+    ))
+
+    return graph
+end
+
+function _hardware_topology(source)
+    source isa DWaveHardwareTopology && return source
+    source isa AbstractDict && return WorkingGraph(source)
+    source isa QUBOTools.SampleSet && return WorkingGraph(QUBOTools.metadata(source))
+    source isa PythonCall.Py && return WorkingGraph(source)
+
+    throw(ArgumentError(
+        "expected a D-Wave hardware topology, metadata dictionary, sample set, or sampler",
+    ))
+end
+
+_draw_topology_function(::Pegasus) = _dnx().draw_pegasus
+_draw_topology_function(::Zephyr) = _dnx().draw_zephyr
+
+function _draw_topology_function(arch::WorkingGraph)
+    arch.topology_type == "pegasus" && return _dnx().draw_pegasus
+    arch.topology_type == "zephyr" && return _dnx().draw_zephyr
+
+    throw(ArgumentError("D-Wave drawing helpers only support Pegasus and Zephyr topologies"))
+end
+
+_draw_embedding_function(::Pegasus) = _dnx().draw_pegasus_embedding
+_draw_embedding_function(::Zephyr) = _dnx().draw_zephyr_embedding
+
+function _draw_embedding_function(arch::WorkingGraph)
+    arch.topology_type == "pegasus" && return _dnx().draw_pegasus_embedding
+    arch.topology_type == "zephyr" && return _dnx().draw_zephyr_embedding
+
+    throw(ArgumentError("D-Wave embedding drawing helpers only support Pegasus and Zephyr topologies"))
+end
+
+function _matplotlib_figure_axes()
+    figure_axes = PythonCall.pyimport("matplotlib.pyplot").subplots()
+
+    return figure_axes[0], figure_axes[1]
+end
+
+function _draw_result(draw_function, graph, args...; ax = nothing, kwargs...)
+    if ax === nothing
+        figure, draw_axis = _matplotlib_figure_axes()
+        draw_function(graph, args...; ax = draw_axis, kwargs...)
+
+        return figure
+    else
+        draw_function(graph, args...; ax = ax, kwargs...)
+
+        return ax
+    end
+end
+
+function _normalise_embedding_for_drawing(embedding_data)
+    normal_embedding = _normalise_embedding(embedding_data)
+
+    normal_embedding === nothing && throw(ArgumentError(
+        "embedding must be a dictionary mapping variables to integer qubit chains",
+    ))
+
+    return normal_embedding
+end
+
+function _embedding_from_metadata(metadata::AbstractDict)
+    normal_embedding = embedding(metadata)
+
+    normal_embedding === nothing && throw(ArgumentError(
+        "metadata does not contain a D-Wave embedding; sample with return_embedding=true",
+    ))
+
+    return normal_embedding
+end
+
+@doc raw"""
+    DWave.draw_topology(source; kwargs...)
+
+Draw a Pegasus or Zephyr hardware topology with D-Wave NetworkX.
+
+`source` may be a `Pegasus`, `Zephyr`, `WorkingGraph`, D-Wave sampler,
+`QUBOTools.SampleSet`, or metadata dictionary accepted by `WorkingGraph`.
+Keyword arguments are forwarded to `dwave_networkx.draw_pegasus` or
+`dwave_networkx.draw_zephyr`.
+
+By default this creates and returns a Matplotlib figure, which notebooks can
+display directly. If `ax` is supplied, drawing is performed on that axis and
+the same axis is returned.
+"""
+function draw_topology(arch::DWaveHardwareTopology; kwargs...)
+    return _draw_result(
+        _draw_topology_function(arch),
+        _dnx_hardware_graph(arch);
+        kwargs...,
+    )
+end
+
+function draw_topology(source; kwargs...)
+    return draw_topology(_hardware_topology(source); kwargs...)
+end
+
+@doc raw"""
+    DWave.draw_embedding(source, embedding; kwargs...)
+    DWave.draw_embedding(sampleset_or_metadata; kwargs...)
+
+Draw a returned minor embedding over the full Pegasus or Zephyr working graph
+with D-Wave NetworkX.
+
+The two-argument form accepts any topology source supported by
+`draw_topology` plus an embedding dictionary of the form
+`Dict{Int,Vector{Int}}`. The one-argument form extracts both the working graph
+and embedding from a `QUBOTools.SampleSet` or metadata dictionary, preserving
+compatibility with `DWave.WorkingGraph(QUBOTools.metadata(sampleset))`.
+
+Keyword arguments are forwarded to `dwave_networkx.draw_pegasus_embedding` or
+`dwave_networkx.draw_zephyr_embedding`. By default this creates and returns a
+Matplotlib figure; if `ax` is supplied, that axis is returned.
+"""
+function draw_embedding(arch::DWaveHardwareTopology, embedding_data::AbstractDict; kwargs...)
+    return _draw_result(
+        _draw_embedding_function(arch),
+        _dnx_hardware_graph(arch),
+        _py(_normalise_embedding_for_drawing(embedding_data));
+        kwargs...,
+    )
+end
+
+function draw_embedding(source, embedding_data::AbstractDict; kwargs...)
+    return draw_embedding(_hardware_topology(source), embedding_data; kwargs...)
+end
+
+function draw_embedding(metadata::AbstractDict; kwargs...)
+    return draw_embedding(WorkingGraph(metadata), _embedding_from_metadata(metadata); kwargs...)
+end
+
+function draw_embedding(sampleset::QUBOTools.SampleSet; kwargs...)
+    metadata = QUBOTools.metadata(sampleset)
+
+    return draw_embedding(WorkingGraph(metadata), _embedding_from_metadata(metadata); kwargs...)
+end
+
 function _dnx_layout_points(layout, nodes::Vector{Int})
     points = Vector{QUBOTools.Point{2,Float64}}(undef, length(nodes))
 

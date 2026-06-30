@@ -5,6 +5,7 @@ import QUBOTools
 import Test
 
 const Graphs = DWave.Graphs
+const PythonCall = DWave.PythonCall
 
 function _node_edge_pairs(arch)
     graph = QUBOTools.topology(QUBOTools.layout(arch))
@@ -21,6 +22,30 @@ end
 
 function _point_count(points)
     return length(unique(points))
+end
+
+function _py_len(value)
+    return PythonCall.pyconvert(Int, PythonCall.pybuiltins.len(value))
+end
+
+function _py_class_name(value)
+    return PythonCall.pyconvert(String, value.__class__.__name__)
+end
+
+function _close_figure(figure)
+    PythonCall.pyimport("matplotlib.pyplot").close(figure)
+
+    return nothing
+end
+
+function _use_matplotlib_test_backend()
+    config_dir = get!(ENV, "MPLCONFIGDIR") do
+        mktempdir()
+    end
+    PythonCall.pyimport("os").environ["MPLCONFIGDIR"] = config_dir
+    PythonCall.pyimport("matplotlib").use("Agg"; force = true)
+
+    return nothing
 end
 
 Test.@testset "Pegasus layout uses Ocean topology data" begin
@@ -111,6 +136,86 @@ Test.@testset "WorkingGraph unknown topology uses graph geometry fallback" begin
 
     Test.@test length(points) == 3
     Test.@test _point_count(points) == 3
+end
+
+Test.@testset "D-Wave NetworkX drawing helpers use full working graphs" begin
+    _use_matplotlib_test_backend()
+
+    pegasus_metadata = Dict{String,Any}(
+        "dwave_info" => Dict{String,Any}(
+            "chip_info" => Dict{String,Any}(
+                "topology" => Dict{String,Any}("type" => "pegasus", "shape" => Any[2]),
+                "qubits" => Any[2, 3, 28],
+                "couplers" => Any[Any[2, 3], Any[2, 28]],
+            ),
+            "embedding_context" => Dict{String,Any}(
+                "embedding" => Dict{Any,Any}(1 => Any[2], 2 => Any[28]),
+            ),
+        ),
+    )
+    pegasus = DWave.WorkingGraph(pegasus_metadata)
+    pegasus_graph = DWave._dnx_hardware_graph(pegasus)
+
+    Test.@test isdefined(DWave, :draw_topology)
+    Test.@test isdefined(DWave, :draw_embedding)
+    Test.@test _py_len(pegasus_graph.nodes()) == length(pegasus.nodes)
+    Test.@test _py_len(pegasus_graph.edges()) == length(pegasus.edges)
+
+    figure = DWave.draw_topology(pegasus; node_size = 8, with_labels = false)
+
+    try
+        Test.@test _py_class_name(figure) == "Figure"
+    finally
+        _close_figure(figure)
+    end
+
+    figure = DWave.draw_embedding(pegasus_metadata; node_size = 8, with_labels = false)
+
+    try
+        Test.@test _py_class_name(figure) == "Figure"
+    finally
+        _close_figure(figure)
+    end
+
+    zephyr_metadata = Dict{String,Any}(
+        "dwave_info" => Dict{String,Any}(
+            "chip_info" => Dict{String,Any}(
+                "topology" => Dict{String,Any}("type" => "zephyr", "shape" => Any[2, 4]),
+                "qubits" => Any[0, 1, 4],
+                "couplers" => Any[Any[0, 1], Any[1, 4]],
+            ),
+            "embedding_context" => Dict{String,Any}(
+                "embedding" => Dict{Any,Any}(1 => Any[0], 2 => Any[4]),
+            ),
+        ),
+    )
+    zephyr = DWave.WorkingGraph(zephyr_metadata)
+    zephyr_graph = DWave._dnx_hardware_graph(zephyr)
+
+    Test.@test _py_len(zephyr_graph.nodes()) == length(zephyr.nodes)
+    Test.@test _py_len(zephyr_graph.edges()) == length(zephyr.edges)
+
+    figure = DWave.draw_topology(zephyr; node_size = 8, with_labels = false)
+
+    try
+        Test.@test _py_class_name(figure) == "Figure"
+    finally
+        _close_figure(figure)
+    end
+
+    figure = DWave.draw_embedding(zephyr, Dict(1 => [0], 2 => [4]); node_size = 8, with_labels = false)
+
+    try
+        Test.@test _py_class_name(figure) == "Figure"
+    finally
+        _close_figure(figure)
+    end
+
+    Test.@test_throws ArgumentError DWave.draw_embedding(Dict{String,Any}(
+        "dwave_info" => Dict{String,Any}(
+            "chip_info" => pegasus_metadata["dwave_info"]["chip_info"],
+        ),
+    ))
 end
 
 if DWave.__auth__(; verbose = false)
