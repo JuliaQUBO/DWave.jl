@@ -104,6 +104,81 @@ function _dwave_chip_info(dwave_sampler)
     return chip_info
 end
 
+function _normalise_embedding_index(value)
+    value isa Integer && return Int(value)
+
+    if value isa AbstractString
+        index = tryparse(Int, value)
+        index === nothing || return index
+    end
+
+    return nothing
+end
+
+function _normalise_embedding_chain(chain)
+    chain isa AbstractVector || chain isa Tuple || return nothing
+
+    normal_chain = Int[]
+    sizehint!(normal_chain, length(chain))
+
+    for qubit in chain
+        index = _normalise_embedding_index(qubit)
+        index === nothing && return nothing
+
+        push!(normal_chain, index)
+    end
+
+    return normal_chain
+end
+
+function _normalise_embedding(embedding)
+    embedding isa AbstractDict || return nothing
+
+    normal_embedding = Dict{Int,Vector{Int}}()
+
+    for (variable, chain) in pairs(embedding)
+        normal_variable = _normalise_embedding_index(variable)
+        normal_variable === nothing && return nothing
+        normal_chain = _normalise_embedding_chain(chain)
+        normal_chain === nothing && return nothing
+
+        normal_embedding[normal_variable] = normal_chain
+    end
+
+    return normal_embedding
+end
+
+function _normalise_dwave_embedding!(dwave_info::AbstractDict)
+    context = get(dwave_info, "embedding_context", nothing)
+    context isa AbstractDict || return dwave_info
+
+    normal_embedding = _normalise_embedding(get(context, "embedding", nothing))
+    normal_embedding === nothing || (context["embedding"] = normal_embedding)
+
+    return dwave_info
+end
+
+@doc raw"""
+    DWave.embedding(sampleset_or_metadata)
+
+Return the minor embedding recorded in D-Wave sample-set metadata, or `nothing`
+when no embedding was returned. Embeddings are normalized as
+`Dict{Int,Vector{Int}}`.
+"""
+function embedding(metadata::AbstractDict)
+    dwave_info = haskey(metadata, "dwave_info") ? metadata["dwave_info"] : metadata
+    dwave_info isa AbstractDict || return nothing
+
+    context = get(dwave_info, "embedding_context", nothing)
+    context isa AbstractDict || return nothing
+
+    return _normalise_embedding(get(context, "embedding", nothing))
+end
+
+function embedding(sampleset::QUBOTools.SampleSet)
+    return embedding(QUBOTools.metadata(sampleset))
+end
+
 function QUBODrivers.sample(sampler::Optimizer{T}) where {T}
     # Ising Model
     n, h, J, α, β = QUBOTools.ising(sampler, :dict; sense = :min)
@@ -112,8 +187,9 @@ function QUBODrivers.sample(sampler::Optimizer{T}) where {T}
     num_reads = MOI.get(sampler, DWave.NumberOfReads())
     final_num_reads = MOI.get(sampler, QUBODrivers.FinalNumberOfReads())
     sample_params = Dict{Symbol,Any}(
-        :num_reads      => final_num_reads,
-        :annealing_time => MOI.get(sampler, DWave.AnnealingTime()),
+        :num_reads         => final_num_reads,
+        :annealing_time    => MOI.get(sampler, DWave.AnnealingTime()),
+        :return_embedding => MOI.get(sampler, DWave.ReturnEmbedding()),
     )
     dwave_sampler = MOI.get(sampler, DWave.Sampler())
 
@@ -123,8 +199,6 @@ function QUBODrivers.sample(sampler::Optimizer{T}) where {T}
                 token = get(ENV, "DWAVE_API_TOKEN", nothing)
             )
         )
-
-        sample_params[:return_embedding] = MOI.get(sampler, DWave.ReturnEmbedding())
     end
 
     # Results
@@ -132,6 +206,7 @@ function QUBODrivers.sample(sampler::Optimizer{T}) where {T}
     results = @timed dwave_sampler.sample_ising(h, J; sample_params...)
     var_map = pyconvert.(Int, [var for var in results.value.variables])
     dw_info = jl_object(results.value.info)
+    _normalise_dwave_embedding!(dw_info)
     chip_info = _dwave_chip_info(dwave_sampler)
 
     if !isempty(chip_info)
