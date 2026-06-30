@@ -123,6 +123,27 @@ current `QUBODrivers` interface cleanly.
 ## API Token
 To use D-Wave's QPU it is necessary to obtain an API Token from [Leap](https://cloud.dwavesys.com/leap/).
 
+## Topology and Embedding Plots
+`DWave.draw_topology` and `DWave.draw_embedding` wrap D-Wave NetworkX's
+Pegasus and Zephyr plotting helpers and return a Matplotlib figure by default.
+Both helpers accept `DWave.WorkingGraph` values built from sampler metadata, so
+plots use the full calibrated working graph rather than only the embedded
+qubits.
+
+```julia
+using DWave
+using QUBOTools
+
+metadata = QUBOTools.metadata(sampleset)
+
+DWave.draw_topology(DWave.WorkingGraph(metadata))
+DWave.draw_embedding(metadata)
+```
+
+Pass `ax = existing_axis` to draw into an existing Matplotlib axis; all other
+keyword arguments are forwarded to the corresponding D-Wave NetworkX draw
+function.
+
 ## Development Checks
 To verify that DWave can share a CondaPkg environment with the other
 Python-backed JuliaQUBO benchmark drivers, run:
