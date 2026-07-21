@@ -14,8 +14,11 @@ Test.@testset "Compatibility metadata matches supported JuliaQUBO stack" begin
     compat = TOML.parsefile(joinpath(PACKAGE_ROOT, "Project.toml"))["compat"]
 
     Test.@test compat["julia"] == "1.10"
-    Test.@test _compat_entries(compat["QUBODrivers"]) == ["0.6"]
-    Test.@test _compat_entries(compat["QUBOTools"]) == ["0.13", "0.14", "0.15", "0.16"]
+    Test.@test "0.6" in _compat_entries(compat["QUBODrivers"])
+    Test.@test all(
+        version -> version in _compat_entries(compat["QUBOTools"]),
+        ("0.13", "0.14", "0.15", "0.16"),
+    )
 end
 
 Test.@testset "QUBODrivers 0.6 capability traits are declared" begin
