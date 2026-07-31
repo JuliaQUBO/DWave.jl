@@ -1,0 +1,54 @@
+cff-version: 1.2.0
+message: >-
+  If your work depends directly on DWave.jl, please cite the software using
+  this metadata. For general discussion of the JuliaQUBO ecosystem, cite the
+  related QUBO.jl article.
+title: "DWave.jl"
+type: software
+authors:
+  - family-names: "Bernal Neira"
+    given-names: "David E."
+    orcid: "https://orcid.org/0000-0002-8308-5016"
+  - family-names: "Maciel Xavier"
+    given-names: "Pedro"
+    orcid: "https://orcid.org/0000-0002-4678-4942"
+  - family-names: "Ripper"
+    given-names: "Pedro"
+    orcid: "https://orcid.org/0000-0002-2227-3689"
+abstract: >-
+  A Julia interface for D-Wave quantum annealers and the classical samplers
+  distributed with the D-Wave Ocean SDK.
+repository-code: "https://github.com/JuliaQUBO/DWave.jl"
+license: MIT
+version: "0.7.6"
+date-released: 2026-06-30
+doi: "10.5281/zenodo.7812066"
+keywords:
+  - Julia
+  - quantum annealing
+  - quadratic unconstrained binary optimization
+  - QUBO
+references:
+  - type: article
+    authors:
+      - family-names: "Maciel Xavier"
+        given-names: "Pedro"
+        orcid: "https://orcid.org/0000-0002-4678-4942"
+      - family-names: "Ripper"
+        given-names: "Pedro"
+        orcid: "https://orcid.org/0000-0002-2227-3689"
+      - family-names: "Andrade"
+        given-names: "Tiago"
+      - family-names: "Dias Garcia"
+        given-names: "Joaquim"
+        orcid: "https://orcid.org/0000-0002-7721-8564"
+      - family-names: "Maculan"
+        given-names: "Nelson"
+        orcid: "https://orcid.org/0000-0002-3897-3356"
+      - family-names: "Bernal Neira"
+        given-names: "David E."
+        orcid: "https://orcid.org/0000-0002-8308-5016"
+    title: "QUBO.jl: A Julia Ecosystem for Quadratic Unconstrained Binary Optimization"
+    journal: "Optimization Methods and Software"
+    year: 2026
+    doi: "10.1080/10556788.2026.2702926"
