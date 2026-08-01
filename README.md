@@ -1,6 +1,7 @@
 # DWave.jl
 [![CI](https://github.com/JuliaQUBO/DWave.jl/actions/workflows/ci.yml/badge.svg?branch=main)](https://github.com/JuliaQUBO/DWave.jl/actions/workflows/ci.yml?query=branch%3Amain)
 [![QUBODRIVERS](https://img.shields.io/badge/Powered%20by-QUBODrivers.jl-%20%234063d8)](https://github.com/JuliaQUBO/QUBODrivers.jl)
+[![DOI](https://zenodo.org/badge/DOI/10.5281/zenodo.7812066.svg)](https://doi.org/10.5281/zenodo.7812066)
 
 D-Wave Quantum Annealing Interface for JuMP
 
@@ -143,6 +144,19 @@ DWave.draw_embedding(metadata)
 Pass `ax = existing_axis` to draw into an existing Matplotlib axis; all other
 keyword arguments are forwarded to the corresponding D-Wave NetworkX draw
 function.
+
+## Citation
+
+For work that depends directly on this D-Wave integration, cite `DWave.jl`
+using [`CITATION.cff`](CITATION.cff) or its
+[Zenodo concept DOI](https://doi.org/10.5281/zenodo.7812066). The concept DOI is
+the evergreen software identifier and resolves to the latest archived release.
+
+For general discussion of the JuliaQUBO ecosystem, cite the
+[QUBO.jl ecosystem article](https://doi.org/10.1080/10556788.2026.2702926).
+When exact-release reproducibility matters, cite the corresponding Zenodo
+version DOI instead; the archive for `v0.7.6` is
+[10.5281/zenodo.21078136](https://doi.org/10.5281/zenodo.21078136).
 
 ## Development Checks
 To verify that DWave can share a CondaPkg environment with the other

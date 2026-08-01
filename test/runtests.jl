@@ -2,6 +2,7 @@ import DWave
 import QUBODrivers
 
 include("compat_metadata.jl")
+include("citation.jl")
 include("auth.jl")
 
 if DWave.__auth__(; verbose = false)

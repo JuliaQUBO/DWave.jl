@@ -1,4 +1,6 @@
 [deps]
+Downloads   = "f43a241f-c20a-4ad4-852c-f6b1247861c6"
+JSON        = "682c06a0-de6a-54ab-a142-c8b1cf79cde6"
 Random      = "9a3f8284-a2c9-5f02-9a11-845980a1fd5c"
 QUBODrivers = "a3f166f7-2cd3-47b6-9e1e-6fbfe0449eb0"
 QUBOTools   = "60eb5b62-0a39-4ddc-84c5-97d2adff9319"
