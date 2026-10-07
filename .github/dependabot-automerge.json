@@ -1,0 +1,17 @@
+{
+  "repository": "JuliaQUBO/DWave.jl",
+  "required_checks": [
+    "Julia 1.10 - ubuntu-latest - x64 - pull_request",
+    "Julia 1.10 - windows-latest - x64 - pull_request",
+    "Julia 1 - ubuntu-latest - x64 - pull_request",
+    "Julia 1 - windows-latest - x64 - pull_request",
+    "Dependabot policy"
+  ],
+  "protected_checks": [
+    "Julia 1.10 - ubuntu-latest - x64 - pull_request",
+    "Julia 1.10 - windows-latest - x64 - pull_request",
+    "Julia 1 - ubuntu-latest - x64 - pull_request",
+    "Julia 1 - windows-latest - x64 - pull_request"
+  ],
+  "publication": []
+}
