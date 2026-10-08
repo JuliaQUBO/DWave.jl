@@ -11,7 +11,6 @@ on:
 permissions:
   contents: write
   pull-requests: write
-  actions: write
 
 # Every invocation reconciles all eligible PRs, so pending runs can coalesce.
 concurrency:
