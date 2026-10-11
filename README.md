@@ -121,6 +121,45 @@ only applies to planar Ising models without linear biases, and the tree
 decomposition samplers expose exact-solver and marginal APIs that do not fit the
 current `QUBODrivers` interface cleanly.
 
+### Neal temperature and objective energy units
+
+Neal's inverse temperatures (`beta_range` or a custom `beta_schedule`) are in
+inverse units of the original objective energy. If the model represents
+`f(x) = scale * (polynomial(x) + offset)`, Neal anneals `f` for minimization
+and `-f` for maximization. Model scale is absorbed into the sparse native
+coefficients; the explicit beta values are forwarded unchanged. A negative
+scale reverses the native coefficients and hence the optimization direction.
+Sense conversion is applied once. Additive constants are excluded from the
+native BQM because they do not affect transitions, and are restored in returned
+objective values. Zero scale produces zero native biases and zero objective
+values without division by scale.
+
+Equivalent polynomials loaded as QUBOTools models or copied through MOI thus
+have equivalent native energy differences and temperature schedules, up to
+floating-point rounding during conversion.
+
+With `beta_range = nothing`, upstream Neal chooses its range from the scaled
+native biases for both `"linear"` and `"geometric"` schedules. In the current
+upstream rule, a nonzero uniform scale changes the automatic beta endpoints by
+`1 / abs(scale)`: absolute incident biases determine the endpoints. Thus the
+beta times energy-difference magnitudes compensate for uniform scaling; negative
+scale still reverses the energy landscape. For an all-zero or constant objective,
+upstream uses the arbitrary range `[0.1, 1.0]` and warns about zero biases.
+Custom schedules use `beta_schedule_type = "custom"` and the supplied values.
+
+This corrects earlier behavior that sampled unscaled coefficients and applied
+scale only when formatting results. Existing explicit schedules for nonunit-scale
+models can therefore produce different trajectories. For a positive scale of
+`1.5`, an old `beta_range = (0.3, 3.0)` had the effective original-energy range
+`(0.2, 2.0)`; use `(0.2, 2.0)` to retain that effective temperature after this
+change. Likewise divide each old custom beta by `1.5`. No preservation of the
+old incorrect negative-scale optimization direction is promised. Unit-scale
+models retain their temperature semantics.
+
+Because this changes observable explicit-schedule behavior, the recommended
+release is **0.8.0** (a breaking minor release for this pre-1.0 package), with
+this migration note, rather than a patch release.
+
 ### Neal read accounting and interruption
 
 Neal result metadata distinguishes allocation from returned work:

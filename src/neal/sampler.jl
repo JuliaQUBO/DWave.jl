@@ -105,14 +105,16 @@ callback, state = track_interrupt(original)
     )
 end
 
-function _sparse_ising_bqm(n::Int, h::Dict{Int,T}, J::Dict{Tuple{Int,Int},T}) where {T}
+function _sparse_ising_bqm(
+    n::Int, h::Dict{Int,T}, J::Dict{Tuple{Int,Int},T}, α::T = one(T),
+) where {T}
     linear = zeros(T, n)
 
     for (i, v) in h
-        linear[i] = v
+        linear[i] = α * v
     end
 
-    quadratic = collect(J)
+    quadratic = iszero(α) ? Pair{Tuple{Int,Int},T}[] : collect(J)
     # Match dimod's dense-matrix interaction order so seeded Neal runs stay stable.
     sort!(quadratic; by = term -> (first(term)[2], first(term)[1]))
 
@@ -125,7 +127,7 @@ function _sparse_ising_bqm(n::Int, h::Dict{Int,T}, J::Dict{Tuple{Int,Int},T}) wh
 
         rows[k] = j - 1
         cols[k] = i - 1
-        weights[k] = last(quadratic[k])
+        weights[k] = α * last(quadratic[k])
     end
 
     return DWave.dwave_dimod.BinaryQuadraticModel.from_numpy_vectors(
@@ -160,14 +162,17 @@ function QUBODrivers.sample(sampler::Optimizer{T}) where {T}
     )
 
     py_sampler = dwave_samplers.SimulatedAnnealingSampler()
-    results = @timed py_sampler.sample(_sparse_ising_bqm(n, h, J); params...)
+    # ising(...; sense = :min) already converts maximization signs. Its
+    # energy is α * (h⋅s + s⋅J⋅s + β), so scale native biases once and
+    # restore only αβ afterward. Explicit inverse temperatures stay unchanged.
+    results = @timed py_sampler.sample(_sparse_ising_bqm(n, h, J, α); params...)
 
     sampleset = DWave._format_classical_sampleset(
         T,
         results,
         n,
-        α,
-        β;
+        one(T),
+        α * β;
         origin = "D-Wave Neal",
         algorithm_name = "D-Wave Neal Simulated Annealing Sampler",
         number_of_reads = num_reads,
