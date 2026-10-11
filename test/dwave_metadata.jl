@@ -129,6 +129,9 @@ Test.@testset "DWave metadata includes chip info" begin
     Test.@test metadata["backend"]["version"] == DWave.OCEAN_SDK_VERSION
     Test.@test metadata["reads"]["number_of_reads"] == 100
     Test.@test metadata["reads"]["final_number_of_reads"] == 100
+    Test.@test metadata["optimizer"]["evaluations"] == 100
+    Test.@test !haskey(metadata["reads"], "completed_number_of_reads")
+    Test.@test !haskey(metadata, "termination")
     Test.@test metadata["time"]["effective"] == 42 / 1_000_000
     Test.@test metadata["time"]["dwave"]["timing"]["qpu_access_time"] == 42
     Test.@test metadata["time"]["dwave"]["units"]["qpu_access_time"] == "microseconds"

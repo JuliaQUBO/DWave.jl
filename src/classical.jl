@@ -263,6 +263,7 @@ function _format_classical_sampleset(
     number_of_reads = nothing,
     final_number_of_reads = number_of_reads,
     seed = nothing,
+    report_completed_reads::Bool = false,
 ) where {T}
     samples = QUBOTools.Sample{T,Int}[]
     var_map = pyconvert.(Int, [var for var in results.value.variables]) .+ 1
@@ -299,6 +300,11 @@ function _format_classical_sampleset(
         final_number_of_reads = metadata_final_number_of_reads,
         seeds = _seed_metadata(seed),
     )
+    if report_completed_reads
+        metadata["reads"]["completed_number_of_reads"] = observed_reads
+        metadata["optimizer"]["evaluations"] = observed_reads
+        metadata["optimizer"]["evaluation_unit"] = "returned_reads"
+    end
     metadata["time"] = Dict{String,Any}("effective" => results.time)
     _attach_dwave_timing!(metadata, dwave_info)
     metadata["dwave_info"] = dwave_info
