@@ -6,9 +6,12 @@ create a new concept record for a new version.
 
 ## Before tagging
 
-- [ ] Confirm that at least two active JuliaQUBO maintainers have **Can manage**
-      access to the existing Zenodo deposit. Record the stewards and review
-      date in the ecosystem tracker, JuliaQUBO/QUBO.jl#66.
+- [ ] Follow the [accepted stewardship decision](https://github.com/JuliaQUBO/DWave.jl/issues/69#issuecomment-5153545777):
+      David Bernal (`@bernalde`) is the sole designated Zenodo owner for now.
+      Record verified **Can manage** access, or outstanding access recovery or
+      transfer work, and the review date in JuliaQUBO/QUBO.jl#66. Designation
+      alone is not evidence of deposit access. A second manager is not a current
+      release gate; revisit a backup annually or when maintainership changes.
 - [ ] Update the version in `Project.toml` and the version and release date in
       `CITATION.cff`.
 - [ ] Keep the concept DOI in `CITATION.cff` and the README badge unchanged.
