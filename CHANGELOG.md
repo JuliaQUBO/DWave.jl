@@ -2,9 +2,12 @@
 
 ## 0.8.0 — 2026-10-11
 
-This release corrects Neal read accounting, interruption status, and temperature
-semantics. It is a breaking minor release for directly installed QUBOTools models
-with nonunit scale and existing explicit temperature schedules.
+This breaking minor release corrects Neal read accounting, interruption status,
+and temperature semantics. Neal callers that use evaluation counts or termination
+statuses should review the accounting changes below, including through MOI/JuMP.
+Directly installed QUBOTools models with nonunit scale can change behavior with
+existing explicit schedules; negative scale changes the optimization direction
+regardless of schedule.
 
 ### Read accounting and interruption
 
@@ -17,7 +20,8 @@ with nonunit scale and existing explicit temperature schedules.
   counts.
 - An actual truthy interrupt callback reports `MOI.INTERRUPTED`, including when
   it fires after the final allotted read. A short return alone reports
-  `MOI.OTHER_ERROR`, not an inferred interruption or time limit. Native callback
+  `MOI.OTHER_ERROR`, not an inferred interruption or time limit. These cases
+  previously reported `MOI.LOCALLY_SOLVED`. Native callback
   errors report `MOI.OTHER_ERROR` while preserving completed results; propagated
   backend exceptions clear stale results and report a sampling error.
 - Valid returned incumbents remain available through the public MOI result,
