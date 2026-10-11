@@ -121,6 +121,51 @@ only applies to planar Ising models without linear biases, and the tree
 decomposition samplers expose exact-solver and marginal APIs that do not fit the
 current `QUBODrivers` interface cleanly.
 
+### Neal read accounting and interruption
+
+Neal result metadata distinguishes allocation from returned work:
+
+| Metadata field | Meaning |
+| --- | --- |
+| `reads.number_of_reads` | Requested `num_reads`. |
+| `reads.final_number_of_reads` | Effective allocation forwarded to Neal, including a `QUBODrivers.FinalNumberOfReads()` override. |
+| `reads.completed_number_of_reads` | Sum of returned `num_occurrences`, including repeated samples. |
+| `optimizer.evaluations` | Completed returned reads; previously this reported the effective allocation. |
+| `optimizer.evaluation_unit` | `"returned_reads"`; these are not native proposal or spin-flip counts. |
+
+For example, requesting 11 reads with a final allocation of 7 and stopping after
+one read records `11`, `7`, and `1` respectively, with one evaluation. Two
+aggregated rows with multiplicities 4 and 3 record seven completed reads.
+
+The `interrupt_function` is called only by the upstream sampler, with no arguments
+after each completed read, including the final one. Solve-local tracking forwards
+its arguments and uses the native Python truth conversion of its return value.
+It adds no callback calls or work inside annealing sweeps. `termination.interrupt_requested` records
+whether an actual callback returned a truthy value, independently of the number
+of returned solutions. Such a solve reports `MOI.INTERRUPTED`, raw status
+`"interrupt_callback"`, and `termination.reason = "interrupt_callback"`. This
+also applies when the callback returns true after the final allotted read: the
+allocation is complete, but the callback requested termination. An arbitrary
+callback does not imply a time limit.
+
+Normal full completion reports `MOI.LOCALLY_SOLVED` and raw status
+`"locally_solved"`. A short or empty return without callback interruption reports
+`MOI.OTHER_ERROR` and `"incomplete_return"`; it does not establish interruption.
+The native Neal bridge treats callback exceptions as a stop and returns the
+reads completed so far. Tracking preserves that behavior and records
+`termination.interrupt_callback_error = true`, `MOI.OTHER_ERROR`, and raw status
+`"interrupt_callback_error"`. Exceptions propagated by a backend are rethrown;
+the previous solve's results are cleared and public status becomes
+`MOI.OTHER_ERROR` with `"sampling_error"`.
+
+Valid returned incumbents remain accessible through `MOI.ResultCount()`,
+`MOI.PrimalStatus()` (`FEASIBLE_POINT` for valid result indices),
+`MOI.VariablePrimal()`, and `MOI.ObjectiveValue()`, including after interruption
+or a native callback error. A fresh or emptied optimizer reports
+`MOI.OPTIMIZE_NOT_CALLED`; each new solve starts with fresh termination state.
+These accounting and status corrections apply to Neal. Other classical and
+QPU samplers retain their existing metadata and status behavior.
+
 ## API Token
 To use D-Wave's QPU it is necessary to obtain an API Token from [Leap](https://cloud.dwavesys.com/leap/).
 

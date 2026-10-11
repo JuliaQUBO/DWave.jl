@@ -55,6 +55,56 @@ end
 
 QUBODrivers.honors_final_reads(::Type{<:Optimizer}) = true
 
+function MOI.get(sampler::Optimizer{T}, attr::MOI.TerminationStatus) where {T}
+    metadata = QUBOTools.metadata(QUBOTools.solution(sampler))
+    return get(metadata, "termination_status") do
+        invoke(MOI.get, Tuple{QUBODrivers.AbstractSampler{T},MOI.TerminationStatus}, sampler, attr)
+    end
+end
+
+function MOI.optimize!(sampler::Optimizer{T}) where {T}
+    # A failed new solve must not expose the previous solve's result or status.
+    QUBOTools.attach!(sampler, QUBOTools.SampleSet{T,Int}())
+    try
+        return invoke(MOI.optimize!, Tuple{QUBODrivers.AbstractSampler{T}}, sampler)
+    catch
+        QUBOTools.attach!(sampler, QUBOTools.SampleSet{T,Int}(;
+            metadata = Dict{String,Any}(
+                "status" => "sampling_error",
+                "termination_status" => MOI.OTHER_ERROR,
+            ),
+        ))
+        rethrow()
+    end
+end
+
+function _tracked_interrupt_function(callback::Function)
+    return pyexec(
+        @NamedTuple{callback::Py,state::Py},
+        """
+def track_interrupt(original):
+    state = {"interrupt_requested": False, "interrupt_callback_error": False}
+
+    def tracked(*args, **kwargs):
+        try:
+            # Convert exactly once, as the native callback bridge does.
+            stop = bool(original(*args, **kwargs))
+        except Exception:
+            state["interrupt_callback_error"] = True
+            raise
+        if stop:
+            state["interrupt_requested"] = True
+        return stop
+
+    return tracked, state
+
+callback, state = track_interrupt(original)
+""",
+        @__MODULE__,
+        (original = callback,),
+    )
+end
+
 function _sparse_ising_bqm(n::Int, h::Dict{Int,T}, J::Dict{Tuple{Int,Int},T}) where {T}
     linear = zeros(T, n)
 
@@ -92,6 +142,8 @@ function QUBODrivers.sample(sampler::Optimizer{T}) where {T}
     num_reads = MOI.get(sampler, MOI.RawOptimizerAttribute("num_reads"))
     final_num_reads = MOI.get(sampler, QUBODrivers.FinalNumberOfReads())
     seed = MOI.get(sampler, QUBODrivers.RandomSeed())
+    interrupt_function = MOI.get(sampler, MOI.RawOptimizerAttribute("interrupt_function"))
+    tracked = isnothing(interrupt_function) ? nothing : _tracked_interrupt_function(interrupt_function)
     params = Dict{Symbol,Any}(
         :num_reads => final_num_reads,
         :num_sweeps => MOI.get(sampler, MOI.RawOptimizerAttribute("num_sweeps")),
@@ -104,13 +156,13 @@ function QUBODrivers.sample(sampler::Optimizer{T}) where {T}
             sampler,
             MOI.RawOptimizerAttribute("initial_states_generator"),
         ),
-        :interrupt_function => MOI.get(sampler, MOI.RawOptimizerAttribute("interrupt_function")),
+        :interrupt_function => isnothing(tracked) ? nothing : tracked.callback,
     )
 
     py_sampler = dwave_samplers.SimulatedAnnealingSampler()
     results = @timed py_sampler.sample(_sparse_ising_bqm(n, h, J); params...)
 
-    return DWave._format_classical_sampleset(
+    sampleset = DWave._format_classical_sampleset(
         T,
         results,
         n,
@@ -121,7 +173,30 @@ function QUBODrivers.sample(sampler::Optimizer{T}) where {T}
         number_of_reads = num_reads,
         final_number_of_reads = final_num_reads,
         seed = seed,
+        report_completed_reads = true,
     )
+
+    metadata = QUBOTools.metadata(sampleset)
+    termination = isnothing(tracked) ? Dict{String,Any}(
+        "interrupt_requested" => false,
+        "interrupt_callback_error" => false,
+    ) : DWave.jl_object(tracked.state)
+    completed_reads = metadata["reads"]["completed_number_of_reads"]
+    status, reason = if termination["interrupt_callback_error"]
+        MOI.OTHER_ERROR, "interrupt_callback_error"
+    elseif termination["interrupt_requested"]
+        MOI.INTERRUPTED, "interrupt_callback"
+    elseif completed_reads != final_num_reads || isempty(sampleset)
+        MOI.OTHER_ERROR, "incomplete_return"
+    else
+        MOI.LOCALLY_SOLVED, "completed"
+    end
+    termination["reason"] = reason
+    metadata["termination"] = termination
+    metadata["termination_status"] = status
+    metadata["status"] = status == MOI.LOCALLY_SOLVED ? "locally_solved" : reason
+
+    return sampleset
 end
 
 end # module Neal
