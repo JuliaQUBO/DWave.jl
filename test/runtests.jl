@@ -17,6 +17,7 @@ QUBODrivers.test(DWave.Random.Optimizer; examples = true, benchmark_conformance 
 QUBODrivers.test(DWave.Tabu.Optimizer; examples = true, benchmark_conformance = true)
 
 include("neal_parity.jl")
+include("neal_scale.jl")
 include("neal_interrupt.jl")
 include("classical_parity.jl")
 include("dwave_metadata.jl")
