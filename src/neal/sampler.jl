@@ -105,16 +105,14 @@ callback, state = track_interrupt(original)
     )
 end
 
-function _sparse_ising_bqm(
-    n::Int, h::Dict{Int,T}, J::Dict{Tuple{Int,Int},T}, α::T = one(T),
-) where {T}
+function _sparse_ising_bqm(n::Int, h::Dict{Int,T}, J::Dict{Tuple{Int,Int},T}) where {T}
     linear = zeros(T, n)
 
     for (i, v) in h
-        linear[i] = α * v
+        linear[i] = v
     end
 
-    quadratic = iszero(α) ? Pair{Tuple{Int,Int},T}[] : collect(J)
+    quadratic = collect(J)
     # Match dimod's dense-matrix interaction order so seeded Neal runs stay stable.
     sort!(quadratic; by = term -> (first(term)[2], first(term)[1]))
 
@@ -127,7 +125,7 @@ function _sparse_ising_bqm(
 
         rows[k] = j - 1
         cols[k] = i - 1
-        weights[k] = α * last(quadratic[k])
+        weights[k] = last(quadratic[k])
     end
 
     return DWave.dwave_dimod.BinaryQuadraticModel.from_numpy_vectors(
@@ -138,8 +136,27 @@ function _sparse_ising_bqm(
     )
 end
 
+# Normalize scale in the original domain, before Bool-to-Spin additions.
+# This matches MOI's coefficient arithmetic; scaling converted fields can perturb
+# an exact floating-point tie and change Neal's automatic cold-beta selection.
+function _native_ising_form(sampler::Optimizer{T}) where {T}
+    if isone(QUBOTools.scale(sampler))
+        return QUBOTools.ising(sampler, :dict; sense = :min)
+    end
+
+    n, L, Q, α, β = QUBOTools.form(sampler, :dict; sense = :min)
+    # Drop zero-scaled coefficients as MOI does, retaining all n variables.
+    l = Dict{Int,T}(i => α * v for (i, v) in L if !iszero(α * v))
+    q = Dict{Tuple{Int,Int},T}(ij => α * v for (ij, v) in Q if !iszero(α * v))
+    scaled = QUBOTools.Form{T}(n,
+        QUBOTools.DictLinearForm{T}(l), QUBOTools.DictQuadraticForm{T}(q), one(T), α * β;
+        sense = :min, domain = QUBOTools.domain(sampler))
+
+    return QUBOTools.cast(QUBOTools.domain(:spin), scaled)
+end
+
 function QUBODrivers.sample(sampler::Optimizer{T}) where {T}
-    n, h, J, α, β = QUBOTools.ising(sampler, :dict; sense = :min)
+    n, h, J, _, β = _native_ising_form(sampler)
 
     num_reads = MOI.get(sampler, MOI.RawOptimizerAttribute("num_reads"))
     final_num_reads = MOI.get(sampler, QUBODrivers.FinalNumberOfReads())
@@ -162,17 +179,16 @@ function QUBODrivers.sample(sampler::Optimizer{T}) where {T}
     )
 
     py_sampler = dwave_samplers.SimulatedAnnealingSampler()
-    # ising(...; sense = :min) already converts maximization signs. Its
-    # energy is α * (h⋅s + s⋅J⋅s + β), so scale native biases once and
-    # restore only αβ afterward. Explicit inverse temperatures stay unchanged.
-    results = @timed py_sampler.sample(_sparse_ising_bqm(n, h, J, α); params...)
+    # The native form is already scaled and in minimization energy units.
+    # Constants do not affect transitions; restore only its offset afterward.
+    results = @timed py_sampler.sample(_sparse_ising_bqm(n, h, J); params...)
 
     sampleset = DWave._format_classical_sampleset(
         T,
         results,
         n,
         one(T),
-        α * β;
+        β;
         origin = "D-Wave Neal",
         algorithm_name = "D-Wave Neal Simulated Annealing Sampler",
         number_of_reads = num_reads,

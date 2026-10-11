@@ -37,11 +37,12 @@ target.SimulatedAnnealingSampler = capture_sampler(original, dimod, np, itertool
     end
 end
 
-function _scale_fixture(domain, sense, scale; constant = false, decimal = false, offset = 2.25)
+function _scale_fixture(domain, sense, scale; constant = false, decimal = false, offset = 2.25,
+    linear_values = nothing, quadratic_values = nothing)
     # Variable 4 is isolated; exactly representable coefficients make seeded
     # trajectory equality meaningful. The decimal fixture retains issue #74.
-    linear = constant ? zeros(3) : decimal ? [0.3, -0.7, 0.2] : [0.5, -0.75, 0.25]
-    quadratic = constant ? zeros(2) : decimal ? [1.2, -0.9] : [1.0, -0.5]
+    linear = something(linear_values, constant ? zeros(3) : decimal ? [0.3, -0.7, 0.2] : [0.5, -0.75, 0.25])
+    quadratic = something(quadratic_values, constant ? zeros(2) : decimal ? [1.2, -0.9] : [1.0, -0.5])
     variables = MOI.VariableIndex.(1:4)
     model = QUBOTools.Model{MOI.VariableIndex,Float64,Int}(
         variables, [1, 2, 3], linear, [1, 2], [2, 3], quadratic;
@@ -125,7 +126,7 @@ Test.@testset "Neal scale: native energy units and public reconstruction" begin
                         Test.@test QUBOTools.value(x, QUBOTools.form(model)) ≈ energy(x) atol = 1e-14
                         delta = _native_energy(payload, s) - reference_e
                         Test.@test delta ≈ sign * (energy(x) - energy(reference_x)) atol = 1e-14
-                        for beta in (0.25, 2.0)
+                        for beta in DWave.PythonCall.pyconvert(Tuple{Float64,Float64}, payload.params["beta_range"])
                             Test.@test beta * delta ≈ beta * sign * (energy(x) - energy(reference_x)) atol = 2e-14
                         end
                     end
@@ -282,6 +283,38 @@ Test.@testset "Neal offsets leave native transitions unchanged" begin
             Test.@test a.offset == b.offset == 0.0
             Test.@test [(r[1], r[3]) for r in ar] == [(r[1], r[3]) for r in br]
             Test.@test [r[2] for r in br] == [r[2] + (-1.5) * (-4.0 - 2.25) for r in ar]
+        end
+    end
+end
+
+
+Test.@testset "Neal decimal automatic schedules preserve loading-route parity" begin
+    _with_neal_payload(; exhaustive = false) do
+        for sense in (:min, :max), schedule in ("linear", "geometric")
+            model, source, energy = _scale_fixture(:bool, sense, 1.5;
+                linear_values = [-0.4, -0.3, -0.4], quadratic_values = [-0.2, 0.7])
+            outcomes = []
+            for route in (:direct, :moi)
+                optimizer = _scale_optimizer(model, source, route; num_reads = 24,
+                    num_sweeps = 12, beta_schedule_type = schedule, seed = 19)
+                MOI.optimize!(optimizer)
+                payload = _native_payload()
+                records = _scale_records(optimizer)
+                Test.@test payload.variables == collect(0:3)
+                Test.@test all(r -> isapprox(r[2], energy(collect(r[1])); atol = 2e-15, rtol = 0), records)
+                Test.@test QUBOTools.metadata(QUBOTools.solution(optimizer))["reads"]["completed_number_of_reads"] == 24
+                range = QUBOTools.metadata(QUBOTools.solution(optimizer))["dwave_info"]["beta_range"]
+                push!(outcomes, (payload, records, range))
+            end
+            (a, ar, abeta), (b, br, bbeta) = outcomes
+            # Applying scale after Bool conversion perturbs a cold-gap tie and
+            # changes the upstream cold endpoint by log(2)/(2*minimum_bias).
+            Test.@test a.linear == b.linear
+            Test.@test a.weights == b.weights
+            Test.@test abeta == bbeta
+            Test.@test [(r[1], r[3]) for r in ar] == [(r[1], r[3]) for r in br]
+            # Constants can accumulate in different floating-point orders.
+            Test.@test [r[2] for r in ar] ≈ [r[2] for r in br] atol = 2e-15 rtol = 0
         end
     end
 end
