@@ -144,15 +144,19 @@ function _native_ising_form(sampler::Optimizer{T}) where {T}
         return QUBOTools.ising(sampler, :dict; sense = :min)
     end
 
-    n, L, Q, α, β = QUBOTools.form(sampler, :dict; sense = :min)
+    n, L, Q, α, β = QUBOTools.form(sampler, :dict)
+    # form(..., :dict) owns fresh, sized dictionaries. Preserve their layout:
+    # rebuilding through filtered generators can reorder floating-point sums.
+    map!(v -> α * v, values(L))
+    map!(v -> α * v, values(Q))
     # Drop zero-scaled coefficients as MOI does, retaining all n variables.
-    l = Dict{Int,T}(i => α * v for (i, v) in L if !iszero(α * v))
-    q = Dict{Tuple{Int,Int},T}(ij => α * v for (ij, v) in Q if !iszero(α * v))
+    filter!(term -> !iszero(last(term)), L)
+    filter!(term -> !iszero(last(term)), Q)
     scaled = QUBOTools.Form{T}(n,
-        QUBOTools.DictLinearForm{T}(l), QUBOTools.DictQuadraticForm{T}(q), one(T), α * β;
-        sense = :min, domain = QUBOTools.domain(sampler))
+        QUBOTools.DictLinearForm{T}(L), QUBOTools.DictQuadraticForm{T}(Q), one(T), α * β;
+        sense = QUBOTools.sense(sampler), domain = QUBOTools.domain(sampler))
 
-    return QUBOTools.cast(QUBOTools.domain(:spin), scaled)
+    return QUBOTools.cast(QUBOTools.frame(sampler) => QUBOTools.Frame(:min, :spin), scaled)
 end
 
 function QUBODrivers.sample(sampler::Optimizer{T}) where {T}

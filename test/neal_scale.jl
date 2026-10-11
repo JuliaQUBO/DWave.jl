@@ -38,30 +38,32 @@ target.SimulatedAnnealingSampler = capture_sampler(original, dimod, np, itertool
 end
 
 function _scale_fixture(domain, sense, scale; constant = false, decimal = false, offset = 2.25,
-    linear_values = nothing, quadratic_values = nothing)
+    linear_values = nothing, quadratic_values = nothing,
+    edges = [(1, 2), (2, 3)], num_variables = 4)
     # Variable 4 is isolated; exactly representable coefficients make seeded
     # trajectory equality meaningful. The decimal fixture retains issue #74.
     linear = something(linear_values, constant ? zeros(3) : decimal ? [0.3, -0.7, 0.2] : [0.5, -0.75, 0.25])
     quadratic = something(quadratic_values, constant ? zeros(2) : decimal ? [1.2, -0.9] : [1.0, -0.5])
-    variables = MOI.VariableIndex.(1:4)
+    variables = MOI.VariableIndex.(1:num_variables)
     model = QUBOTools.Model{MOI.VariableIndex,Float64,Int}(
-        variables, [1, 2, 3], linear, [1, 2], [2, 3], quadratic;
+        variables, collect(eachindex(linear)), linear, first.(edges), last.(edges), quadratic;
         domain, sense, scale, offset,
     )
     # This MOI source absorbs scale into the original objective coefficients.
     # It is built independently of ising(), matching the actual copy_to route.
     source = MOI.Utilities.UniversalFallback(MOI.Utilities.Model{Float64}())
     vars, _ = MOI.add_constrained_variables(source,
-        fill(domain == :bool ? MOI.ZeroOne() : QUBODrivers.Spin(), 4))
+        fill(domain == :bool ? MOI.ZeroOne() : QUBODrivers.Spin(), num_variables))
     MOI.set(source, MOI.ObjectiveSense(), sense == :min ? MOI.MIN_SENSE : MOI.MAX_SENSE)
     MOI.set(source, MOI.ObjectiveFunction{MOI.ScalarQuadraticFunction{Float64}}(),
         MOI.ScalarQuadraticFunction(
-            [MOI.ScalarQuadraticTerm(scale * quadratic[k], vars[k], vars[k + 1]) for k in 1:2],
-            [MOI.ScalarAffineTerm(scale * linear[k], vars[k]) for k in 1:3],
+            [MOI.ScalarQuadraticTerm(scale * quadratic[k], vars[i], vars[j])
+                for (k, (i, j)) in enumerate(edges)],
+            [MOI.ScalarAffineTerm(scale * linear[k], vars[k]) for k in eachindex(linear)],
             scale * offset,
         ))
-    energy = x -> scale * (sum(linear .* x[1:3]) +
-        quadratic[1] * x[1] * x[2] + quadratic[2] * x[2] * x[3] + offset)
+    energy = x -> scale * (sum(linear .* x[eachindex(linear)]) +
+        sum(quadratic[k] * x[i] * x[j] for (k, (i, j)) in enumerate(edges)) + offset)
     return model, source, energy
 end
 
@@ -315,6 +317,65 @@ Test.@testset "Neal decimal automatic schedules preserve loading-route parity" b
             Test.@test [(r[1], r[3]) for r in ar] == [(r[1], r[3]) for r in br]
             # Constants can accumulate in different floating-point orders.
             Test.@test [r[2] for r in ar] ≈ [r[2] for r in br] atol = 2e-15 rtol = 0
+        end
+    end
+end
+
+
+Test.@testset "Neal decimal field order across dictionary growth thresholds" begin
+    # This twelve-edge fixture previously gave cold betas 76.0504 and 70.6442:
+    # a changed dictionary layout changed which three fields were exactly tied.
+    linear = [-0.3, 0.7, -0.4, -0.05, 0.25, 0.95]
+    quadratic = [-0.5, 0.8, 0.7, 0.8, 0.4, -0.5, -0.7, 0.9, -0.5, 0.2, -0.2, 0.6]
+    edges = [(i, j) for i in 1:6 for j in (i + 1):6][1:12]
+    fixtures = [(linear, quadratic, edges, 6)]
+    # Sized and unsized Dict constructors can resize at different nnz counts.
+    # Keep these fixtures small and deterministic, with an isolated variable.
+    for interactions in (10, 11, 12, 16, 20, 24)
+        e = [(i, j) for i in 1:8 for j in (i + 1):8][1:interactions]
+        l = [linear[mod1(i, length(linear))] for i in 1:8]
+        q = [quadratic[mod1(i, length(quadratic))] for i in 1:interactions]
+        push!(fixtures, (l, q, e, 9))
+    end
+    _with_neal_payload(; exhaustive = false) do
+        for (l, q, e, n) in fixtures, sense in (:min, :max), scale in (1.5, -1.5),
+            schedule in ("linear", "geometric"), storage in (:sparse, :dict)
+            Test.@testset "n=$n/nnz=$(length(q))/$sense/$scale/$schedule/$storage" begin
+                model, source, energy = _scale_fixture(:bool, sense, scale;
+                    linear_values = l, quadratic_values = q, edges = e, num_variables = n)
+                if storage == :dict
+                    model = QUBOTools.Model{MOI.VariableIndex,Float64,Int}(
+                        QUBOTools.VariableMap{MOI.VariableIndex}(QUBOTools.variables(model)),
+                        QUBOTools.form(model, :dict))
+                end
+                original = deepcopy(Tuple(QUBOTools.form(model, :dict)))
+                outcomes = []
+                for route in (:direct, :moi)
+                    optimizer = _scale_optimizer(model, source, route; num_reads = 24,
+                        num_sweeps = 12, beta_schedule_type = schedule, seed = 7412)
+                    MOI.optimize!(optimizer)
+                    payload = _native_payload()
+                    records = _scale_records(optimizer)
+                    Test.@test payload.variables == collect(0:(n - 1))
+                    Test.@test length(payload.weights) == length(q)
+                    # Bound reassociation error by the absolute sum of terms;
+                    # native coefficients/ranges/trajectories below remain exact.
+                    tol = 8 * eps(Float64) * abs(scale) * (sum(abs, l) + sum(abs, q) + 2.25)
+                    Test.@test all(r -> isapprox(r[2], energy(collect(r[1])); atol = tol, rtol = 0), records)
+                    info = QUBOTools.metadata(QUBOTools.solution(optimizer))
+                    Test.@test info["reads"]["completed_number_of_reads"] == 24
+                    Test.@test MOI.get(optimizer, MOI.TerminationStatus()) == MOI.LOCALLY_SOLVED
+                    push!(outcomes, (payload, records, info["dwave_info"]["beta_range"]))
+                end
+                (a, ar, abeta), (b, br, bbeta) = outcomes
+                Test.@test a.linear == b.linear
+                Test.@test a.rows == b.rows
+                Test.@test a.cols == b.cols
+                Test.@test a.weights == b.weights
+                Test.@test abeta == bbeta
+                Test.@test [(r[1], r[3]) for r in ar] == [(r[1], r[3]) for r in br]
+                Test.@test Tuple(QUBOTools.form(model, :dict)) == original
+            end
         end
     end
 end
