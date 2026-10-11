@@ -192,6 +192,10 @@ Test.@testset "Neal native callback path and solve isolation" begin
         Test.@test metadata["optimizer"]["evaluations"] == completed
         Test.@test MOI.get(model, MOI.TerminationStatus()) == status
         Test.@test metadata["termination"]["reason"] == reason
+        Test.@test MOI.get(model, MOI.RawStatusString()) ==
+            (status == MOI.LOCALLY_SOLVED ? "locally_solved" : reason)
+        Test.@test metadata["termination"]["interrupt_requested"] == (reason == "interrupt_callback")
+        Test.@test metadata["termination"]["interrupt_callback_error"] == (reason == "interrupt_callback_error")
         _assert_neal_incumbents(model, variables, h, J)
     end
     raw = MOI.get(model, MOI.RawSolver())

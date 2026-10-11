@@ -137,10 +137,10 @@ For example, requesting 11 reads with a final allocation of 7 and stopping after
 one read records `11`, `7`, and `1` respectively, with one evaluation. Two
 aggregated rows with multiplicities 4 and 3 record seven completed reads.
 
-The `interrupt_function` is called only by the upstream sampler, normally with
-no arguments between reads. Solve-local tracking forwards its arguments and
-uses the native Python truth conversion of its return value. It adds no callback
-calls or work inside annealing sweeps. `termination.interrupt_requested` records
+The `interrupt_function` is called only by the upstream sampler, with no arguments
+after each completed read, including the final one. Solve-local tracking forwards
+its arguments and uses the native Python truth conversion of its return value.
+It adds no callback calls or work inside annealing sweeps. `termination.interrupt_requested` records
 whether an actual callback returned a truthy value, independently of the number
 of returned solutions. Such a solve reports `MOI.INTERRUPTED`, raw status
 `"interrupt_callback"`, and `termination.reason = "interrupt_callback"`. This
