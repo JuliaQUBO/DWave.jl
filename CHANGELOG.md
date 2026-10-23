@@ -24,7 +24,11 @@ time and resolves a `CondaPkg` Python environment solver conflict caused by
 
 - Added `python-dateutil = ">=2.7, <3"` to `CondaPkg.toml` so `pixi` does not
   select `python-dateutil 3.0.1` (which requires `python >=3.15.0a0`) when
-  resolving `matplotlib >=3` under `python >=3.11, <=3.13` (#83, #84).
+  resolving `matplotlib-base >=3` under `python >=3.11, <=3.13` (#83, #84).
+- Switched the conda plotting dependency in `CondaPkg.toml` from the
+  `matplotlib` meta-package to `matplotlib-base = ">=3"`, avoiding ~900 MB of
+  unused Qt6/PySide6/LLVM GUI packages and keeping fresh `import DWave`
+  installations within `JuliaRegistries/General` AutoMerge disk quotas.
 
 ## 0.8.0 — 2026-10-11
 
