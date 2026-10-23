@@ -20,16 +20,40 @@ def make_spies(dwave_cloud, dwave_system, fail_solver):
 
     state = {
         "client_tokens": [],
+        "client_endpoints": [],
         "get_solver_calls": 0,
         "client_closed": 0,
         "sampler_tokens": [],
+        "sampler_endpoints": [],
         "composite_calls": 0,
         "sample_ising_calls": 0,
     }
 
     class FakeCloudClient:
+        @classmethod
+        def from_config(cls, config_file=None, profile=None, client=None, **kwargs):
+            config = dwave_cloud.config.load_config(
+                config_file=config_file,
+                profile=profile,
+                client=client,
+                **kwargs,
+            )
+            config.pop("client", None)
+            return cls(**config)
+
         def __init__(self, *args, **kwargs):
-            state["client_tokens"].append(kwargs.get("token"))
+            raw_token = kwargs.get("token")
+            token = raw_token.strip() if isinstance(raw_token, str) else None
+            if not token:
+                raise ValueError("API token not defined")
+            endpoint = kwargs.get("endpoint")
+            state["client_tokens"].append(token)
+            state["client_endpoints"].append(endpoint)
+            self.config = type(
+                "FakeConfig",
+                (),
+                {"token": token, "endpoint": endpoint},
+            )()
 
         def get_solver(self, *args, **kwargs):
             state["get_solver_calls"] += 1
@@ -42,7 +66,14 @@ def make_spies(dwave_cloud, dwave_system, fail_solver):
 
     class FakeDWaveSampler:
         def __init__(self, *args, **kwargs):
-            state["sampler_tokens"].append(kwargs.get("token"))
+            config = dwave_cloud.config.load_config(**kwargs)
+            raw_token = config.get("token")
+            token = raw_token.strip() if isinstance(raw_token, str) else None
+            if not token:
+                raise ValueError("API token not defined")
+            endpoint = config.get("endpoint")
+            state["sampler_tokens"].append(token)
+            state["sampler_endpoints"].append(endpoint)
             self.properties = {
                 "chip_id": "mock-chip",
                 "topology": {"type": "pegasus", "shape": [16]},
@@ -98,11 +129,29 @@ state, restore = make_spies(dwave_cloud, dwave_system, fail_solver)
     )
 end
 
+function _with_temp_dwave_config(f::Function, contents::AbstractString)
+    return mktemp() do path, io
+        write(io, contents)
+        close(io)
+        withenv("DWAVE_CONFIG_FILE" => path) do
+            return f(path)
+        end
+    end
+end
+
 function _with_cloud_spies(f::Function; fail_solver::Bool = false)
     spies = _install_cloud_spies!(; fail_solver = fail_solver)
     prev_token = DWave.API_TOKEN[]
     try
-        return f(spies.state)
+        return _with_temp_dwave_config("") do _
+            withenv(
+                "DWAVE_PROFILE" => nothing,
+                "DWAVE_API_ENDPOINT" => nothing,
+                "DWAVE_API_REGION" => nothing,
+            ) do
+                return f(spies.state)
+            end
+        end
     finally
         spies.restore()
         DWave.API_TOKEN[] = prev_token
@@ -130,7 +179,7 @@ function _build_two_spin_cloud_model()
     return model
 end
 
-function _subprocess_import_check()
+function _subprocess_import_check(initial_token::Union{String, Nothing})
     code = """
     const PythonCall = Base.require(
         Base.PkgId(Base.UUID("6099a3de-0909-46bc-b1f4-468b9a2dfc0d"), "PythonCall"),
@@ -144,6 +193,10 @@ function _subprocess_import_check()
     def install_import_guards(dwave_cloud, dwave_system):
         counts = {"client": 0, "sampler": 0}
         class FailIfCalledClient:
+            @classmethod
+            def from_config(cls, *args, **kwargs):
+                counts["client"] += 1
+                raise RuntimeError("dwave.cloud.Client.from_config should not be called on import")
             def __init__(self, *args, **kwargs):
                 counts["client"] += 1
                 raise RuntimeError("dwave.cloud.Client should not be called on import")
@@ -205,7 +258,7 @@ function _subprocess_import_check()
     active_proj = Base.active_project()
     project_dir = active_proj === nothing ? AUTH_PACKAGE_ROOT : dirname(active_proj)
     err_buf = IOBuffer()
-    ok = withenv("DWAVE_API_TOKEN" => "unvalidated-host-token") do
+    ok = withenv("DWAVE_API_TOKEN" => initial_token) do
         success(pipeline(
             `$julia --startup-file=no --project=$project_dir -e $code`,
             stderr = err_buf,
@@ -215,9 +268,11 @@ function _subprocess_import_check()
 end
 
 Test.@testset "Local-only DWave import and classical setup make zero cloud calls" begin
-    ok, err_output = _subprocess_import_check()
-    Test.@test ok
-    Test.@test !occursin("DWAVE_API_TOKEN", err_output)
+    for initial_token in (nothing, "unvalidated-host-token")
+        ok, err_output = _subprocess_import_check(initial_token)
+        Test.@test ok
+        Test.@test !occursin("DWAVE_API_TOKEN", err_output)
+    end
 end
 
 Test.@testset "Explicit __auth__ validates credentials and reports diagnostics" begin
@@ -266,6 +321,36 @@ Test.@testset "Explicit __auth__ validates credentials and reports diagnostics" 
         Test.@test counts["get_solver_calls"] == 1
         Test.@test counts["client_closed"] == 1
     end
+
+    _with_cloud_spies(; fail_solver = false) do state
+        config_text = """
+        [defaults]
+        token = config-only-token
+        endpoint = https://configured.example.invalid/sapi/
+        """
+        _with_temp_dwave_config(config_text) do _
+            for env_val in (nothing, "", "   ")
+                DWave.API_TOKEN[] = nothing
+                withenv("DWAVE_API_TOKEN" => env_val) do
+                    Test.@test DWave.__auth__(; verbose = false)
+                    Test.@test DWave.API_TOKEN[] == "config-only-token"
+                end
+            end
+        end
+        counts = DWave.jl_object(state)
+        Test.@test counts["client_tokens"] == Any[
+            "config-only-token",
+            "config-only-token",
+            "config-only-token",
+        ]
+        Test.@test counts["client_endpoints"] == Any[
+            "https://configured.example.invalid/sapi/",
+            "https://configured.example.invalid/sapi/",
+            "https://configured.example.invalid/sapi/",
+        ]
+        Test.@test counts["get_solver_calls"] == 3
+        Test.@test counts["client_closed"] == 3
+    end
 end
 
 Test.@testset "Cloud DWave.Optimizer defers authentication until solve and reports diagnostics" begin
@@ -286,6 +371,7 @@ Test.@testset "Cloud DWave.Optimizer defers authentication until solve and repor
             Test.@test err isa ArgumentError
             msg = sprint(showerror, err)
             Test.@test occursin("The 'DWAVE_API_TOKEN' environment variable is not defined or is empty.", msg)
+            Test.@test occursin("No D-Wave Ocean configuration token was found", msg)
             Test.@test occursin("https://docs.ocean.dwavesys.com/en/stable/overview/sapi.html", msg)
 
             counts_after = DWave.jl_object(state)
@@ -319,8 +405,72 @@ Test.@testset "Cloud DWave.Optimizer defers authentication until solve and repor
         end
     end
 
+    _with_cloud_spies(; fail_solver = true) do state
+        config_text = """
+        [defaults]
+        token = invalid-config-token
+        endpoint = https://configured.example.invalid/sapi/
+        """
+        _with_temp_dwave_config(config_text) do _
+            withenv("DWAVE_API_TOKEN" => nothing) do
+                model = _build_two_spin_cloud_model()
+                err = try
+                    MOI.optimize!(model)
+                    nothing
+                catch e
+                    e
+                end
+
+                Test.@test err isa ArgumentError
+                msg = sprint(showerror, err)
+                Test.@test occursin("The configured D-Wave cloud credentials or endpoint are not valid.", msg)
+                Test.@test occursin("Invalid token", msg)
+                Test.@test DWave.API_TOKEN[] === nothing
+            end
+        end
+
+        counts_after = DWave.jl_object(state)
+        Test.@test counts_after["client_tokens"] == Any["invalid-config-token"]
+        Test.@test counts_after["client_endpoints"] == Any["https://configured.example.invalid/sapi/"]
+        Test.@test counts_after["get_solver_calls"] == 1
+        Test.@test counts_after["client_closed"] == 1
+        Test.@test isempty(counts_after["sampler_tokens"])
+    end
+
     _with_cloud_spies(; fail_solver = false) do state
-        withenv("DWAVE_API_TOKEN" => "valid-cloud-token") do
+        config_text = """
+        [defaults]
+        token = config-only-solve-token
+        endpoint = https://configured.example.invalid/sapi/
+        """
+        _with_temp_dwave_config(config_text) do _
+            withenv("DWAVE_API_TOKEN" => nothing) do
+                model = _build_two_spin_cloud_model()
+                MOI.optimize!(model)
+
+                raw_solver = MOI.get(model, MOI.RawSolver())
+                sampleset = QUBOTools.solution(raw_solver)
+                Test.@test length(sampleset) == 1
+                Test.@test DWave.API_TOKEN[] == "config-only-solve-token"
+            end
+        end
+
+        counts_after = DWave.jl_object(state)
+        Test.@test counts_after["client_tokens"] == Any["config-only-solve-token"]
+        Test.@test counts_after["client_endpoints"] == Any["https://configured.example.invalid/sapi/"]
+        Test.@test counts_after["get_solver_calls"] == 1
+        Test.@test counts_after["client_closed"] == 1
+        Test.@test counts_after["sampler_tokens"] == Any["config-only-solve-token"]
+        Test.@test counts_after["sampler_endpoints"] == Any["https://configured.example.invalid/sapi/"]
+        Test.@test counts_after["composite_calls"] == 1
+        Test.@test counts_after["sample_ising_calls"] == 1
+    end
+
+    _with_cloud_spies(; fail_solver = false) do state
+        withenv(
+            "DWAVE_API_TOKEN" => "valid-cloud-token",
+            "DWAVE_API_ENDPOINT" => "https://env.example.invalid/sapi/",
+        ) do
             model = _build_two_spin_cloud_model()
             MOI.optimize!(model)
 
@@ -331,9 +481,11 @@ Test.@testset "Cloud DWave.Optimizer defers authentication until solve and repor
 
             counts_after = DWave.jl_object(state)
             Test.@test counts_after["client_tokens"] == Any["valid-cloud-token"]
+            Test.@test counts_after["client_endpoints"] == Any["https://env.example.invalid/sapi/"]
             Test.@test counts_after["get_solver_calls"] == 1
             Test.@test counts_after["client_closed"] == 1
             Test.@test counts_after["sampler_tokens"] == Any["valid-cloud-token"]
+            Test.@test counts_after["sampler_endpoints"] == Any["https://env.example.invalid/sapi/"]
             Test.@test counts_after["composite_calls"] == 1
             Test.@test counts_after["sample_ising_calls"] == 1
         end

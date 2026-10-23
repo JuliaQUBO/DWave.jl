@@ -174,11 +174,24 @@ end
 function _default_cloud_sampler()
     __auth__(; verbose = false, throw_error = true)
 
-    return dwave_system.EmbeddingComposite(
-        dwave_system.DWaveSampler(;
-            token = API_TOKEN[],
-        ),
-    )
+    env_token = _env_api_token()
+    try
+        return _with_synced_dwave_env() do _
+            dwave_system.EmbeddingComposite(
+                dwave_system.DWaveSampler(;
+                    token = API_TOKEN[],
+                ),
+            )
+        end
+    catch e
+        API_TOKEN[] = nothing
+        msg = if _is_missing_token_error(e)
+            _missing_token_message()
+        else
+            _invalid_token_message(e; from_env = !isnothing(env_token))
+        end
+        throw(ArgumentError(chomp(msg)))
+    end
 end
 
 function QUBODrivers.sample(sampler::Optimizer{T}) where {T}
