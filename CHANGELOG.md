@@ -1,5 +1,31 @@
 # Release notes
 
+## 0.8.1 — 2026-10-23
+
+This patch release defers D-Wave Leap cloud authentication until cloud solve
+time and resolves a `CondaPkg` Python environment solver conflict caused by
+`python-dateutil 3.0.1`.
+
+### Cloud authentication and local import hygiene
+
+- `DWave.__init__()` no longer attempts cloud authentication or emits
+  `DWAVE_API_TOKEN` warnings during `using DWave`. Importing `DWave`,
+  instantiating classical or cloud optimizers, and solving with local classical
+  samplers (`DWave.Neal`, `DWave.Greedy`, `DWave.Random`, `DWave.Tabu`) make
+  zero cloud client or solver-discovery calls (#78, #85).
+- Default cloud solves through `DWave.Optimizer` validate credentials lazily at
+  solve time via `dwave.cloud.Client.from_config(client="qpu", ...)`,
+  preserving Ocean configuration-file credentials and endpoints, synchronizing
+  `DWAVE_*` environment overrides, closing temporary validation clients in
+  `finally`, and raising actionable `ArgumentError` diagnostics on missing or
+  invalid credentials (#78, #85).
+
+### Python dependency compatibility
+
+- Added `python-dateutil = ">=2.7, <3"` to `CondaPkg.toml` so `pixi` does not
+  select `python-dateutil 3.0.1` (which requires `python >=3.15.0a0`) when
+  resolving `matplotlib >=3` under `python >=3.11, <=3.13` (#83, #84).
+
 ## 0.8.0 — 2026-10-11
 
 This breaking minor release corrects Neal read accounting, interruption status,
