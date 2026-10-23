@@ -128,10 +128,20 @@ function _is_missing_token_error(err)
     return occursin("API token not defined", details)
 end
 
-function _create_cloud_client(token::Union{String, Nothing})
+function _create_cloud_client(
+    token::Union{String, Nothing};
+    client_type::String = "qpu",
+)
     from_config = _maybe_getproperty(dwave_cloud.Client, :from_config)
     if from_config !== nothing
-        return token === nothing ? from_config() : from_config(; token = token)
+        defaults = pydict(
+            Dict("solver" => pydict(Dict("order_by" => "-num_active_qubits"))),
+        )
+        return if token === nothing
+            from_config(; client = client_type, defaults = defaults)
+        else
+            from_config(; client = client_type, defaults = defaults, token = token)
+        end
     end
     if token === nothing
         error("API token not defined")
