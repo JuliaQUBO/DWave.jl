@@ -28,14 +28,6 @@ const _DWAVE_CHIP_INFO_KEYS = (
     "num_qubits",
 )
 
-function _maybe_getproperty(object, name::Symbol)
-    try
-        return getproperty(object, name)
-    catch
-        return nothing
-    end
-end
-
 function _as_julia_metadata(value)
     value === nothing && return nothing
 
@@ -179,6 +171,29 @@ function embedding(sampleset::QUBOTools.SampleSet)
     return embedding(QUBOTools.metadata(sampleset))
 end
 
+function _default_cloud_sampler()
+    __auth__(; verbose = false, throw_error = true)
+
+    env_token = _env_api_token()
+    try
+        return _with_synced_dwave_env() do _
+            dwave_system.EmbeddingComposite(
+                dwave_system.DWaveSampler(;
+                    token = API_TOKEN[],
+                ),
+            )
+        end
+    catch e
+        API_TOKEN[] = nothing
+        msg = if _is_missing_token_error(e)
+            _missing_token_message()
+        else
+            _invalid_token_message(e; from_env = !isnothing(env_token))
+        end
+        throw(ArgumentError(chomp(msg)))
+    end
+end
+
 function QUBODrivers.sample(sampler::Optimizer{T}) where {T}
     # Ising Model
     n, h, J, α, β = QUBOTools.ising(sampler, :dict; sense = :min)
@@ -194,11 +209,7 @@ function QUBODrivers.sample(sampler::Optimizer{T}) where {T}
     dwave_sampler = MOI.get(sampler, DWave.Sampler())
 
     if dwave_sampler === nothing
-        dwave_sampler = dwave_system.EmbeddingComposite(
-            dwave_system.DWaveSampler(;
-                token = get(ENV, "DWAVE_API_TOKEN", nothing)
-            )
-        )
+        dwave_sampler = _default_cloud_sampler()
     end
 
     # Results

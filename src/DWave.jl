@@ -32,42 +32,170 @@ const _DWAVE_TIMING_MICROSECOND_KEYS = (
     "post_processing_overhead_time",
 )
 
-function __auth__(; verbose :: Bool = false)
-    # D-Wave API Credentials
+const _SAPI_DOCS_URL = "https://docs.ocean.dwavesys.com/en/stable/overview/sapi.html"
+const _DWAVE_ENV_VARS = (
+    "DWAVE_CONFIG_FILE",
+    "DWAVE_PROFILE",
+    "DWAVE_API_CLIENT",
+    "DWAVE_API_REGION",
+    "DWAVE_API_ENDPOINT",
+    "DWAVE_API_TOKEN",
+    "DWAVE_API_SOLVER",
+    "DWAVE_API_PROXY",
+    "DWAVE_API_HEADERS",
+    "DWAVE_CACHE_ENABLED",
+    "DWAVE_CACHE_HOME",
+    "DWAVE_LEAP_API_ENDPOINT",
+    "DWAVE_LEAP_CLIENT_ID",
+    "DWAVE_METADATA_API_ENDPOINT",
+)
+
+function _maybe_getproperty(object, name::Symbol)
+    try
+        return getproperty(object, name)
+    catch
+        return nothing
+    end
+end
+
+function _env_api_token()
     token = get(ENV, "DWAVE_API_TOKEN", nothing)
+    token === nothing && return nothing
+    stripped = strip(token)
+    return isempty(stripped) ? nothing : String(stripped)
+end
 
-    if token !== nothing && !isempty(strip(token))
-        API_TOKEN[] = token
+function _sync_dwave_env_to_python!()
+    os_mod = try
+        pyimport("os")
+    catch
+        nothing
+    end
+    os_environ = os_mod === nothing ? nothing : _maybe_getproperty(os_mod, :environ)
+    os_environ === nothing && return nothing
 
-        try
-            client = dwave_cloud.Client(; token = API_TOKEN[])
-            client.get_solver()
-        catch e
-            API_TOKEN[] = nothing
+    for key in _DWAVE_ENV_VARS
+        val = get(ENV, key, nothing)
+        if val === nothing
+            os_environ.pop(key, pybuiltins.None)
+        else
+            os_environ[key] = val
+        end
+    end
+    return nothing
+end
 
-            if verbose
-                @warn """
-                The 'DWAVE_API_TOKEN' environment variable defined, but the token is not valid.
-                If you want to use D-Wave's cloud services, please make sure that another access method is available.
-                
-                For more information visit:
-                    https://docs.ocean.dwavesys.com/en/stable/overview/sapi.html
-                """
+function _with_synced_dwave_env(f::Function)
+    env_token = _env_api_token()
+    try
+        return withenv("DWAVE_API_TOKEN" => env_token) do
+            _sync_dwave_env_to_python!()
+            return f(env_token)
+        end
+    finally
+        _sync_dwave_env_to_python!()
+    end
+end
+
+function _missing_token_message()
+    return """
+    The 'DWAVE_API_TOKEN' environment variable is not defined or is empty.
+    No D-Wave Ocean configuration token was found; if you want to use D-Wave's cloud services, please make sure that another access method is available.
+
+    For more information visit:
+        $(_SAPI_DOCS_URL)
+    """
+end
+
+function _invalid_token_message(err = nothing; from_env::Bool = true)
+    detail = err === nothing ? "" : "\nCause: $(sprint(showerror, err))\n"
+    header = if from_env
+        "The 'DWAVE_API_TOKEN' environment variable defined, but the token is not valid."
+    else
+        "The configured D-Wave cloud credentials or endpoint are not valid."
+    end
+    return """
+    $(header)$(detail)
+    If you want to use D-Wave's cloud services, please make sure that another access method is available.
+
+    For more information visit:
+        $(_SAPI_DOCS_URL)
+    """
+end
+
+function _is_missing_token_error(err)
+    details = sprint(showerror, err)
+    return occursin("API token not defined", details)
+end
+
+function _create_cloud_client(
+    token::Union{String, Nothing};
+    client_type::String = "qpu",
+)
+    from_config = _maybe_getproperty(dwave_cloud.Client, :from_config)
+    if from_config !== nothing
+        defaults = pydict(
+            Dict("solver" => pydict(Dict("order_by" => "-num_active_qubits"))),
+        )
+        return if token === nothing
+            from_config(; client = client_type, defaults = defaults)
+        else
+            from_config(; client = client_type, defaults = defaults, token = token)
+        end
+    end
+    if token === nothing
+        error("API token not defined")
+    end
+    return dwave_cloud.Client(; token = token)
+end
+
+function _resolved_client_token(client, fallback::Union{String, Nothing})
+    config = _maybe_getproperty(client, :config)
+    raw = config === nothing ? _maybe_getproperty(client, :token) : _maybe_getproperty(config, :token)
+    if raw !== nothing
+        token_str = try
+            val = jl_object(raw)
+            val === nothing ? "" : strip(String(val))
+        catch
+            ""
+        end
+        isempty(token_str) || return token_str
+    end
+    return fallback
+end
+
+function __auth__(; verbose :: Bool = false, throw_error :: Bool = false)
+    # D-Wave API Credentials (environment variable or Ocean configuration fallback)
+    env_token = _env_api_token()
+
+    try
+        _with_synced_dwave_env() do synced_token
+            client = _create_cloud_client(synced_token)
+            try
+                resolved_token = _resolved_client_token(client, synced_token)
+                resolved_token === nothing && error("API token not defined")
+                client.get_solver()
+                API_TOKEN[] = resolved_token
+            finally
+                close_fn = _maybe_getproperty(client, :close)
+                close_fn === nothing || close_fn()
             end
         end
 
         return !isnothing(API_TOKEN[])
-    else
+    catch e
         API_TOKEN[] = nothing
+        msg = if _is_missing_token_error(e)
+            _missing_token_message()
+        else
+            _invalid_token_message(e; from_env = !isnothing(env_token))
+        end
 
         if verbose
-            @warn """
-            The 'DWAVE_API_TOKEN' environment variable is not defined or is empty.
-            If you want to use D-Wave's cloud services, please make sure that another access method is available.
-            
-            For more information visit:
-                https://docs.ocean.dwavesys.com/en/stable/overview/sapi.html
-            """
+            @warn msg
+        end
+        if throw_error
+            throw(ArgumentError(chomp(msg)))
         end
 
         return false
@@ -84,7 +212,7 @@ function __init__()
     PythonCall.pycopy!(dwave_networkx, pyimport("dwave_networkx"))
     PythonCall.pycopy!(dwave_system, pyimport("dwave.system"))
 
-    __auth__(; verbose = true)
+    API_TOKEN[] = nothing
 
     return nothing
 end
