@@ -80,6 +80,8 @@ Test.@testset "Python dependencies match audited stable stack" begin
     pip_deps = condapkg["pip"]["deps"]
 
     Test.@test condapkg["deps"]["python"] == ">=3.11,<=3.13"
+    Test.@test condapkg["deps"]["matplotlib"] == ">=3"
+    Test.@test condapkg["deps"]["python-dateutil"] == ">=2.7,<3"
     Test.@test !haskey(pip_deps, "numpy")
     Test.@test pip_deps["dwave-ocean-sdk"] == "==9.3.0"
     Test.@test pip_deps["dwave_networkx"] == "==0.8.18"
