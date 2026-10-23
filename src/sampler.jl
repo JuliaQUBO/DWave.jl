@@ -28,14 +28,6 @@ const _DWAVE_CHIP_INFO_KEYS = (
     "num_qubits",
 )
 
-function _maybe_getproperty(object, name::Symbol)
-    try
-        return getproperty(object, name)
-    catch
-        return nothing
-    end
-end
-
 function _as_julia_metadata(value)
     value === nothing && return nothing
 
@@ -179,6 +171,16 @@ function embedding(sampleset::QUBOTools.SampleSet)
     return embedding(QUBOTools.metadata(sampleset))
 end
 
+function _default_cloud_sampler()
+    __auth__(; verbose = false, throw_error = true)
+
+    return dwave_system.EmbeddingComposite(
+        dwave_system.DWaveSampler(;
+            token = API_TOKEN[],
+        ),
+    )
+end
+
 function QUBODrivers.sample(sampler::Optimizer{T}) where {T}
     # Ising Model
     n, h, J, α, β = QUBOTools.ising(sampler, :dict; sense = :min)
@@ -194,11 +196,7 @@ function QUBODrivers.sample(sampler::Optimizer{T}) where {T}
     dwave_sampler = MOI.get(sampler, DWave.Sampler())
 
     if dwave_sampler === nothing
-        dwave_sampler = dwave_system.EmbeddingComposite(
-            dwave_system.DWaveSampler(;
-                token = get(ENV, "DWAVE_API_TOKEN", nothing)
-            )
-        )
+        dwave_sampler = _default_cloud_sampler()
     end
 
     # Results

@@ -32,42 +32,74 @@ const _DWAVE_TIMING_MICROSECOND_KEYS = (
     "post_processing_overhead_time",
 )
 
-function __auth__(; verbose :: Bool = false)
+const _SAPI_DOCS_URL = "https://docs.ocean.dwavesys.com/en/stable/overview/sapi.html"
+
+function _maybe_getproperty(object, name::Symbol)
+    try
+        return getproperty(object, name)
+    catch
+        return nothing
+    end
+end
+
+function _missing_token_message()
+    return """
+    The 'DWAVE_API_TOKEN' environment variable is not defined or is empty.
+    If you want to use D-Wave's cloud services, please make sure that another access method is available.
+
+    For more information visit:
+        $(_SAPI_DOCS_URL)
+    """
+end
+
+function _invalid_token_message(err = nothing)
+    detail = err === nothing ? "" : "\nCause: $(sprint(showerror, err))\n"
+    return """
+    The 'DWAVE_API_TOKEN' environment variable defined, but the token is not valid.$(detail)
+    If you want to use D-Wave's cloud services, please make sure that another access method is available.
+
+    For more information visit:
+        $(_SAPI_DOCS_URL)
+    """
+end
+
+function __auth__(; verbose :: Bool = false, throw_error :: Bool = false)
     # D-Wave API Credentials
     token = get(ENV, "DWAVE_API_TOKEN", nothing)
 
     if token !== nothing && !isempty(strip(token))
-        API_TOKEN[] = token
+        API_TOKEN[] = String(strip(token))
 
         try
             client = dwave_cloud.Client(; token = API_TOKEN[])
-            client.get_solver()
+            try
+                client.get_solver()
+            finally
+                close_fn = _maybe_getproperty(client, :close)
+                close_fn === nothing || close_fn()
+            end
         catch e
             API_TOKEN[] = nothing
+            msg = _invalid_token_message(e)
 
             if verbose
-                @warn """
-                The 'DWAVE_API_TOKEN' environment variable defined, but the token is not valid.
-                If you want to use D-Wave's cloud services, please make sure that another access method is available.
-                
-                For more information visit:
-                    https://docs.ocean.dwavesys.com/en/stable/overview/sapi.html
-                """
+                @warn msg
+            end
+            if throw_error
+                throw(ArgumentError(chomp(msg)))
             end
         end
 
         return !isnothing(API_TOKEN[])
     else
         API_TOKEN[] = nothing
+        msg = _missing_token_message()
 
         if verbose
-            @warn """
-            The 'DWAVE_API_TOKEN' environment variable is not defined or is empty.
-            If you want to use D-Wave's cloud services, please make sure that another access method is available.
-            
-            For more information visit:
-                https://docs.ocean.dwavesys.com/en/stable/overview/sapi.html
-            """
+            @warn msg
+        end
+        if throw_error
+            throw(ArgumentError(chomp(msg)))
         end
 
         return false
@@ -84,7 +116,7 @@ function __init__()
     PythonCall.pycopy!(dwave_networkx, pyimport("dwave_networkx"))
     PythonCall.pycopy!(dwave_system, pyimport("dwave.system"))
 
-    __auth__(; verbose = true)
+    API_TOKEN[] = nothing
 
     return nothing
 end
