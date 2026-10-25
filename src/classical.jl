@@ -242,9 +242,8 @@ end
 
 function _normalize_initial_state_value(value, domain::Symbol)
     if domain === :bool
-        if value isa Real && isfinite(value) && isinteger(value)
-            ival = Int(value)
-            ival in (0, 1) && return 2 * ival - 1
+        if value isa Real && (value == 0 || value == 1)
+            return value == 1 ? 1 : -1
         end
         throw(
             ArgumentError(
@@ -252,9 +251,8 @@ function _normalize_initial_state_value(value, domain::Symbol)
             ),
         )
     else
-        if !(value isa Bool) && value isa Real && isfinite(value) && isinteger(value)
-            ival = Int(value)
-            ival in (-1, 1) && return ival
+        if !(value isa Bool) && value isa Real && (value == -1 || value == 1)
+            return value == 1 ? 1 : -1
         end
         throw(
             ArgumentError(

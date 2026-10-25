@@ -153,6 +153,14 @@ def make_recording_sampler(dimod, np):
         def sample(self, bqm, **params):
             variable_order = list(bqm.variables)
             vectors = bqm.to_numpy_vectors(variable_order=variable_order)
+            init_states = params.get("initial_states")
+            if init_states is None:
+                recorded_states = None
+                recorded_state_vars = None
+            else:
+                state_rows, state_vars = init_states
+                recorded_states = np.asarray(state_rows, dtype=int).tolist()
+                recorded_state_vars = [int(v) for v in state_vars]
             RecordingSimulatedAnnealingSampler.last = {
                 "num_variables": bqm.num_variables,
                 "num_interactions": bqm.num_interactions,
@@ -160,6 +168,9 @@ def make_recording_sampler(dimod, np):
                 "rows": vectors.quadratic.row_indices.tolist(),
                 "cols": vectors.quadratic.col_indices.tolist(),
                 "weights": vectors.quadratic.biases.tolist(),
+                "initial_states": recorded_states,
+                "initial_state_variables": recorded_state_vars,
+                "initial_states_generator": params.get("initial_states_generator"),
             }
             samples = np.ones((1, bqm.num_variables), dtype=np.int8)
             return dimod.SampleSet.from_samples(
@@ -203,6 +214,9 @@ end
 
 function _recording_neal_sampler_state()
     record = DWave.Neal.dwave_samplers.SimulatedAnnealingSampler.last
+    py_states = record["initial_states"]
+    py_state_vars = record["initial_state_variables"]
+    py_gen = record["initial_states_generator"]
 
     return (
         num_variables = DWave.Neal.PythonCall.pyconvert(Int, record["num_variables"]),
@@ -211,6 +225,17 @@ function _recording_neal_sampler_state()
         rows = DWave.Neal.PythonCall.pyconvert(Vector{Int}, record["rows"]),
         cols = DWave.Neal.PythonCall.pyconvert(Vector{Int}, record["cols"]),
         weights = DWave.Neal.PythonCall.pyconvert(Vector{Float64}, record["weights"]),
+        initial_states = DWave.Neal.PythonCall.pyis(py_states, DWave.Neal.PythonCall.pybuiltins.None) ?
+                         nothing :
+                         DWave.Neal.PythonCall.pyconvert(Vector{Vector{Int}}, py_states),
+        initial_state_variables = DWave.Neal.PythonCall.pyis(
+            py_state_vars,
+            DWave.Neal.PythonCall.pybuiltins.None,
+        ) ? nothing : DWave.Neal.PythonCall.pyconvert(Vector{Int}, py_state_vars),
+        initial_states_generator = DWave.Neal.PythonCall.pyis(
+            py_gen,
+            DWave.Neal.PythonCall.pybuiltins.None,
+        ) ? nothing : DWave.Neal.PythonCall.pyconvert(String, py_gen),
     )
 end
 
@@ -573,6 +598,84 @@ Test.@testset "Neal wrapper forwards initial_states across domains, shapes, and 
     expected_bool = Set(Tuple(bool_batch[row, :]) for row in 1:size(bool_batch, 1))
     Test.@test returned_bool == expected_bool
 
+    # Native-call capture proving exact payload forwarding for single-state vector
+    # and row-oriented batch across :bool and :spin (including isolated variable 4)
+    original = _install_recording_neal_sampler!()
+    try
+        m_default, _ = _wrapper_neal_qubo_model(linear, edges, quadratic, n; domain = :bool, num_reads = 1)
+        MOI.optimize!(m_default)
+        rec_default = _recording_neal_sampler_state()
+        Test.@test rec_default.initial_states === nothing
+        Test.@test rec_default.initial_state_variables === nothing
+        Test.@test rec_default.initial_states_generator == "random"
+
+        m_bvec, _ = _wrapper_neal_qubo_model(
+            linear,
+            edges,
+            quadratic,
+            n;
+            domain = :bool,
+            num_reads = 1,
+            initial_states = [0, 1, 0, 1],
+            initial_states_generator = "none",
+        )
+        MOI.optimize!(m_bvec)
+        rec_bvec = _recording_neal_sampler_state()
+        Test.@test rec_bvec.initial_states == [[-1, 1, -1, 1]]
+        Test.@test rec_bvec.initial_state_variables == [0, 1, 2, 3]
+        Test.@test rec_bvec.initial_states_generator == "none"
+
+        m_svec, _ = _wrapper_neal_qubo_model(
+            linear,
+            edges,
+            quadratic,
+            n;
+            domain = :spin,
+            num_reads = 1,
+            initial_states = [1, -1, 1, -1],
+            initial_states_generator = "tile",
+        )
+        MOI.optimize!(m_svec)
+        rec_svec = _recording_neal_sampler_state()
+        Test.@test rec_svec.initial_states == [[1, -1, 1, -1]]
+        Test.@test rec_svec.initial_state_variables == [0, 1, 2, 3]
+        Test.@test rec_svec.initial_states_generator == "tile"
+
+        m_bmat, _ = _wrapper_neal_qubo_model(
+            linear,
+            edges,
+            quadratic,
+            n;
+            domain = :bool,
+            num_reads = 3,
+            initial_states = bool_batch,
+            initial_states_generator = "tile",
+        )
+        MOI.optimize!(m_bmat)
+        rec_bmat = _recording_neal_sampler_state()
+        Test.@test rec_bmat.initial_states == [[-1, 1, -1, 1], [1, -1, 1, -1], [1, 1, 1, 1]]
+        Test.@test rec_bmat.initial_state_variables == [0, 1, 2, 3]
+        Test.@test rec_bmat.initial_states_generator == "tile"
+
+        m_smat, _ = _wrapper_neal_qubo_model(
+            linear,
+            edges,
+            quadratic,
+            n;
+            domain = :spin,
+            num_reads = 2,
+            initial_states = [1 -1 1 -1; -1 1 -1 1],
+            initial_states_generator = "none",
+        )
+        MOI.optimize!(m_smat)
+        rec_smat = _recording_neal_sampler_state()
+        Test.@test rec_smat.initial_states == [[1, -1, 1, -1], [-1, 1, -1, 1]]
+        Test.@test rec_smat.initial_state_variables == [0, 1, 2, 3]
+        Test.@test rec_smat.initial_states_generator == "none"
+    finally
+        _restore_neal_sampler!(original)
+    end
+
     # Direct parity with dwave.samplers.SimulatedAnnealingSampler for nonzero sweeps
     h = [0.25, -0.5, 0.75, 0.0]
     J = zeros(Float64, 4, 4)
@@ -746,6 +849,7 @@ Test.@testset "Neal initial_states validation errors" begin
         [-1, 0, 1, 0],
         [2, 0, 1, 0],
         [0.5, 0.0, 1.0, 0.0],
+        [1e30, 0.0, 1.0, 0.0],
         [NaN, 0.0, 1.0, 0.0],
     )
         model, _ = _wrapper_neal_qubo_model(
@@ -771,6 +875,7 @@ Test.@testset "Neal initial_states validation errors" begin
         [2, 1, -1, 1],
         [true, false, true, false],
         [0.5, 1.0, -1.0, 1.0],
+        [1e30, 1.0, -1.0, 1.0],
         [Inf, 1.0, -1.0, 1.0],
     )
         model, _ = _wrapper_neal_qubo_model(
