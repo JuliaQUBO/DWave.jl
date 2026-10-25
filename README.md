@@ -105,13 +105,28 @@ optimize!(model)
 ```
 
 Sampler-specific options are forwarded as raw optimizer attributes via
-`set_attribute(model, name, value)`. For `initial_states`, the Greedy and Tabu
-wrappers accept either a single Julia vector or a matrix whose rows are initial
-states.
+`set_attribute(model, name, value)`. For `initial_states`, the `Neal`, `Greedy`,
+and `Tabu` wrappers accept `nothing`, a single Julia vector of length `n`, or an
+`M × n` matrix whose rows are initial states ordered along the model's `1:n`
+variables (including isolated variables with zero linear and quadratic bias).
+Initial states are given in the input model's domain (`0`/`1` for `ZeroOne` /
+`:bool` models and `-1`/`1` for `Spin` / `:spin` models) and converted to native
+Ising spins before calling `dwave-samplers`. Invalid shapes or out-of-domain
+entries throw an `ArgumentError`.
+
+When `M` initial states are supplied and the effective read allocation is `R`
+(`num_reads`, or `QUBODrivers.FinalNumberOfReads()` when set on `Neal`):
+- If `M < R`, `initial_states_generator = "random"` (the default) pads the
+  remaining `R - M` reads with random states (seeded by `seed` when provided),
+  `"tile"` repeats the `M` supplied states cyclically up to `R` reads, and
+  `"none"` raises an error because fewer states were supplied than requested
+  reads.
+- If `M > R`, upstream `parse_initial_states` truncates the supplied batch to
+  the first `R` states.
 
 | Optimizer | Description | Raw optimizer attributes |
 | --- | --- | --- |
-| `DWave.Neal.Optimizer` | Simulated annealing baseline. | `num_reads`, `num_sweeps`, `num_sweeps_per_beta`, `beta_range`, `beta_schedule`, `beta_schedule_type`, `seed`, `initial_states_generator`, `interrupt_function` |
+| `DWave.Neal.Optimizer` | Simulated annealing baseline. | `num_reads`, `num_sweeps`, `num_sweeps_per_beta`, `beta_range`, `beta_schedule`, `beta_schedule_type`, `seed`, `initial_states`, `initial_states_generator`, `interrupt_function` |
 | `DWave.Greedy.Optimizer` | Steepest-descent local search. | `num_reads`, `initial_states`, `initial_states_generator`, `seed`, `large_sparse_opt` |
 | `DWave.Random.Optimizer` | Random-state sampling. | `num_reads`, `time_limit`, `max_num_samples`, `seed` |
 | `DWave.Tabu.Optimizer` | Tabu-search local search. | `initial_states`, `initial_states_generator`, `num_reads`, `seed`, `tenure`, `timeout`, `num_restarts`, `energy_threshold`, `coefficient_z_first`, `coefficient_z_restart`, `lower_bound_z` |

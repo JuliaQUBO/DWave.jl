@@ -61,7 +61,8 @@ function QUBODrivers.sample(sampler::Optimizer{T}) where {T}
     params = Dict{Symbol,Any}(
         :initial_states => DWave._normalize_initial_states(
             n,
-            MOI.get(sampler, MOI.RawOptimizerAttribute("initial_states")),
+            MOI.get(sampler, MOI.RawOptimizerAttribute("initial_states"));
+            domain = QUBOTools.domain(sampler),
         ),
         :initial_states_generator => MOI.get(
             sampler,
