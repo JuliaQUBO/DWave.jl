@@ -54,7 +54,32 @@ QUBODrivers.@setup Optimizer begin
     end
 end
 
+const _TIME_LIMIT_CLOCK = Ref{Function}(time_ns)
+
 QUBODrivers.honors_final_reads(::Type{<:Optimizer}) = true
+
+MOI.supports(
+    ::Optimizer,
+    ::Union{MOI.TimeLimitSec,QUBODrivers.@raw_attr_str("moi/timelimitsec")},
+) = true
+
+function MOI.set(
+    sampler::Optimizer,
+    attr::QUBODrivers.@raw_attr_str("moi/timelimitsec"),
+    value::Real,
+)
+    if value isa Bool || !isfinite(value) || value < zero(value)
+        throw(
+            ArgumentError(
+                "Value for 'MOI.TimeLimitSec' must be a finite non-negative number, or 'nothing'",
+            ),
+        )
+    end
+
+    QUBODrivers.set_raw_attr!(sampler, attr, Float64(value))
+
+    return nothing
+end
 
 function MOI.get(sampler::Optimizer{T}, attr::MOI.TerminationStatus) where {T}
     metadata = QUBOTools.metadata(QUBOTools.solution(sampler))
@@ -79,30 +104,60 @@ function MOI.optimize!(sampler::Optimizer{T}) where {T}
     end
 end
 
-function _tracked_interrupt_function(callback::Function)
+function _tracked_interrupt_function(
+    callback::Union{Function,Nothing};
+    time_limit_sec::Union{Float64,Nothing} = nothing,
+    start_ns::Union{UInt64,Nothing} = nothing,
+    clock::Function = _TIME_LIMIT_CLOCK[],
+)
+    deadline_check = if isnothing(time_limit_sec) || isnothing(start_ns)
+        nothing
+    else
+        () -> Float64(UInt64(clock()) - start_ns) * 1.0e-9 >= time_limit_sec
+    end
+
     return pyexec(
         @NamedTuple{callback::Py,state::Py},
         """
-def track_interrupt(original):
-    state = {"interrupt_requested": False, "interrupt_callback_error": False}
+def track_interrupt(original, deadline_check, time_limit_sec):
+    state = {
+        "interrupt_requested": False,
+        "interrupt_callback_error": False,
+        "time_limit_exceeded": False,
+        "time_limit_sec": time_limit_sec,
+        "granularity": "completed_read",
+    }
 
     def tracked(*args, **kwargs):
-        try:
-            # Convert exactly once, as the native callback bridge does.
-            stop = bool(original(*args, **kwargs))
-        except Exception:
-            state["interrupt_callback_error"] = True
-            raise
-        if stop:
-            state["interrupt_requested"] = True
-        return stop
+        user_stop = False
+        if original is not None:
+            try:
+                # Convert exactly once, as the native callback bridge does.
+                user_stop = bool(original(*args, **kwargs))
+            except Exception:
+                state["interrupt_callback_error"] = True
+                raise
+            if user_stop:
+                state["interrupt_requested"] = True
+
+        deadline_stop = False
+        if deadline_check is not None:
+            deadline_stop = bool(deadline_check())
+            if deadline_stop:
+                state["time_limit_exceeded"] = True
+
+        return user_stop or deadline_stop
 
     return tracked, state
 
-callback, state = track_interrupt(original)
+callback, state = track_interrupt(original, deadline_check, time_limit_sec)
 """,
         @__MODULE__,
-        (original = callback,),
+        (
+            original = callback,
+            deadline_check = deadline_check,
+            time_limit_sec = time_limit_sec,
+        ),
     )
 end
 
@@ -161,18 +216,38 @@ function _native_ising_form(sampler::Optimizer{T}) where {T}
 end
 
 function QUBODrivers.sample(sampler::Optimizer{T}) where {T}
-    n, h, J, _, β = _native_ising_form(sampler)
+    conversion = @timed begin
+        n, h, J, _, β = _native_ising_form(sampler)
+        bqm = _sparse_ising_bqm(n, h, J)
+        initial_states = DWave._normalize_initial_states(
+            n,
+            MOI.get(sampler, MOI.RawOptimizerAttribute("initial_states"));
+            domain = QUBOTools.domain(sampler),
+        )
+        (n = n, β = β, bqm = bqm, initial_states = initial_states)
+    end
+    n = conversion.value.n
+    β = conversion.value.β
+    bqm = conversion.value.bqm
+    initial_states = conversion.value.initial_states
 
     num_reads = MOI.get(sampler, MOI.RawOptimizerAttribute("num_reads"))
     final_num_reads = MOI.get(sampler, QUBODrivers.FinalNumberOfReads())
     seed = MOI.get(sampler, QUBODrivers.RandomSeed())
-    initial_states = DWave._normalize_initial_states(
-        n,
-        MOI.get(sampler, MOI.RawOptimizerAttribute("initial_states"));
-        domain = QUBOTools.domain(sampler),
-    )
     interrupt_function = MOI.get(sampler, MOI.RawOptimizerAttribute("interrupt_function"))
-    tracked = isnothing(interrupt_function) ? nothing : _tracked_interrupt_function(interrupt_function)
+    time_limit_sec = MOI.get(sampler, MOI.TimeLimitSec())
+    clock = _TIME_LIMIT_CLOCK[]
+    sample_start_ns = UInt64(clock())
+    tracked = if isnothing(interrupt_function) && isnothing(time_limit_sec)
+        nothing
+    else
+        _tracked_interrupt_function(
+            interrupt_function;
+            time_limit_sec = time_limit_sec,
+            start_ns = sample_start_ns,
+            clock = clock,
+        )
+    end
     params = Dict{Symbol,Any}(
         :num_reads => final_num_reads,
         :num_sweeps => MOI.get(sampler, MOI.RawOptimizerAttribute("num_sweeps")),
@@ -192,7 +267,7 @@ function QUBODrivers.sample(sampler::Optimizer{T}) where {T}
     py_sampler = dwave_samplers.SimulatedAnnealingSampler()
     # The native form is already scaled and in minimization energy units.
     # Constants do not affect transitions; restore only its offset afterward.
-    results = @timed py_sampler.sample(_sparse_ising_bqm(n, h, J); params...)
+    results = @timed py_sampler.sample(bqm; params...)
 
     sampleset = DWave._format_classical_sampleset(
         T,
@@ -209,15 +284,21 @@ function QUBODrivers.sample(sampler::Optimizer{T}) where {T}
     )
 
     metadata = QUBOTools.metadata(sampleset)
+    metadata["time"]["conversion"] = conversion.time
     termination = isnothing(tracked) ? Dict{String,Any}(
         "interrupt_requested" => false,
         "interrupt_callback_error" => false,
+        "time_limit_exceeded" => false,
+        "time_limit_sec" => nothing,
+        "granularity" => "completed_read",
     ) : DWave.jl_object(tracked.state)
     completed_reads = metadata["reads"]["completed_number_of_reads"]
     status, reason = if termination["interrupt_callback_error"]
         MOI.OTHER_ERROR, "interrupt_callback_error"
     elseif termination["interrupt_requested"]
         MOI.INTERRUPTED, "interrupt_callback"
+    elseif termination["time_limit_exceeded"]
+        MOI.TIME_LIMIT, "time_limit"
     elseif completed_reads != final_num_reads || isempty(sampleset)
         MOI.OTHER_ERROR, "incomplete_return"
     else

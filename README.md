@@ -176,7 +176,7 @@ change. Likewise divide each old custom beta by `1.5`. No preservation of the
 old incorrect negative-scale optimization direction is promised. Unit-scale
 models retain their temperature semantics.
 
-### Neal read accounting and interruption
+### Neal read accounting, time limits, and interruption
 
 Neal result metadata distinguishes allocation from returned work:
 
@@ -192,34 +192,66 @@ For example, requesting 11 reads with a final allocation of 7 and stopping after
 one read records `11`, `7`, and `1` respectively, with one evaluation. Two
 aggregated rows with multiplicities 4 and 3 record seven completed reads.
 
-The `interrupt_function` is called only by the upstream sampler, with no arguments
-after each completed read, including the final one. Solve-local tracking forwards
-its arguments and uses the native Python truth conversion of its return value.
-It adds no callback calls or work inside annealing sweeps. `termination.interrupt_requested` records
-whether an actual callback returned a truthy value, independently of the number
-of returned solutions. Such a solve reports `MOI.INTERRUPTED`, raw status
-`"interrupt_callback"`, and `termination.reason = "interrupt_callback"`. This
-also applies when the callback returns true after the final allotted read: the
-allocation is complete, but the callback requested termination. An arbitrary
-callback does not imply a time limit.
+`DWave.Neal.Optimizer` also supports `MOI.TimeLimitSec()` (`nothing` or a finite
+non-negative number of seconds) by composing a monotonic (`time_ns()`) deadline
+check with any user `interrupt_function`:
+
+- **Between-read granularity (`QUBODrivers.enforces_time_limit == false`)**:
+  Upstream `SimulatedAnnealingSampler` checks `interrupt_function` only *between
+  completed reads* (`termination.granularity = "completed_read"`). A callback
+  cannot interrupt mid-sweep inside a read, so at least one read completes and a
+  single long read may exceed the deadline. Accordingly,
+  `MOI.supports(model, MOI.TimeLimitSec())` is `true`, while
+  `QUBODrivers.enforces_time_limit(DWave.Neal.Optimizer)` remains `false` so
+  Neal does not advertise a hard intra-read wall-time guarantee.
+- **Explicit time boundaries**:
+  - `metadata["time"]["conversion"]`: Julia-side model, sparse BQM, and
+    `initial_states` preparation time before entering `SimulatedAnnealingSampler.sample`.
+  - `metadata["time"]["effective"]`: wall-clock duration of the native
+    `SimulatedAnnealingSampler.sample` call (with native `preprocessing_ns`,
+    `sampling_ns`, and `postprocessing_ns` preserved under
+    `metadata["dwave_info"]["timing"]`).
+  - `metadata["time"]["total"]`: overall `QUBODrivers` solve duration including
+    any `PostSampleCallback`.
+  - The monotonic `MOI.TimeLimitSec()` deadline is anchored at the start of the
+    native `sample` call and evaluated after each completed read.
+- **Condition tracking and composition**:
+  The `interrupt_function` is called only by the upstream sampler, with no
+  arguments after each completed read, including the final one. Solve-local
+  tracking forwards its arguments and uses the native Python truth conversion of
+  its return value. It adds no callback calls or work inside annealing sweeps.
+  When both `MOI.TimeLimitSec()` and `interrupt_function` are set, both checks
+  are evaluated on each completed read:
+  - `termination.interrupt_requested` records whether the user callback returned
+    a truthy value. Such a solve reports `MOI.INTERRUPTED`, raw status
+    `"interrupt_callback"`, and `termination.reason = "interrupt_callback"`.
+  - `termination.time_limit_exceeded` records whether the monotonic deadline
+    elapsed (`termination.time_limit_sec` stores the configured limit or
+    `nothing`). When the deadline triggers termination without a user-callback
+    stop or callback error, the solve reports `MOI.TIME_LIMIT`, raw status
+    `"time_limit"`, and `termination.reason = "time_limit"`.
+  - This also applies when the callback or deadline triggers after the final
+    allotted read: the allocation is complete, but termination was requested by
+    the callback or deadline. An arbitrary user callback without
+    `MOI.TimeLimitSec()` does not imply a time limit.
 
 Normal full completion reports `MOI.LOCALLY_SOLVED` and raw status
-`"locally_solved"`. A short or empty return without callback interruption reports
-`MOI.OTHER_ERROR` and `"incomplete_return"`; it does not establish interruption.
-The native Neal bridge treats callback exceptions as a stop and returns the
-reads completed so far. Tracking preserves that behavior and records
-`termination.interrupt_callback_error = true`, `MOI.OTHER_ERROR`, and raw status
-`"interrupt_callback_error"`. Exceptions propagated by a backend are rethrown;
-the previous solve's results are cleared and public status becomes
+`"locally_solved"`. A short or empty return without callback or deadline
+interruption reports `MOI.OTHER_ERROR` and `"incomplete_return"`; it does not
+establish interruption. The native Neal bridge treats callback exceptions as a
+stop and returns the reads completed so far. Tracking preserves that behavior
+and records `termination.interrupt_callback_error = true`, `MOI.OTHER_ERROR`,
+and raw status `"interrupt_callback_error"`. Exceptions propagated by a backend
+are rethrown; the previous solve's results are cleared and public status becomes
 `MOI.OTHER_ERROR` with `"sampling_error"`.
 
 Valid returned incumbents remain accessible through `MOI.ResultCount()`,
 `MOI.PrimalStatus()` (`FEASIBLE_POINT` for valid result indices),
-`MOI.VariablePrimal()`, and `MOI.ObjectiveValue()`, including after interruption
-or a native callback error. A fresh or emptied optimizer reports
-`MOI.OPTIMIZE_NOT_CALLED`; each new solve starts with fresh termination state.
-These accounting and status corrections apply to Neal. Other classical and
-QPU samplers retain their existing metadata and status behavior.
+`MOI.VariablePrimal()`, and `MOI.ObjectiveValue()`, including after a time
+limit, user callback interruption, or native callback error. A fresh or emptied
+optimizer reports `MOI.OPTIMIZE_NOT_CALLED`; each new solve starts with fresh
+termination state. These accounting and status rules apply to Neal. Other
+classical and QPU samplers retain their existing metadata and status behavior.
 
 ## API Token
 To use D-Wave's QPU it is necessary to obtain an API Token from [Leap](https://cloud.dwavesys.com/leap/).

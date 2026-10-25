@@ -39,6 +39,11 @@ end
 QUBODrivers.honors_final_reads(::Type{<:Optimizer}) = true
 QUBODrivers.enforces_time_limit(::Type{<:Optimizer}) = true
 
+MOI.supports(
+    ::Optimizer,
+    ::Union{MOI.TimeLimitSec,QUBODrivers.@raw_attr_str("moi/timelimitsec")},
+) = true
+
 function QUBODrivers.sample(sampler::Optimizer{T}) where {T}
     n, h, J, α, β = QUBOTools.ising(sampler, :dense; sense = :min)
 
