@@ -1,5 +1,28 @@
 # Release notes
 
+## 0.8.2 — 2026-10-25
+
+This patch release adds initial-state seeding and wall-clock time-limit
+support to `DWave.Neal.Optimizer` and updates the exact-version Zenodo
+archive citation metadata.
+
+### `DWave.Neal` initial states and wall-clock time limits
+
+- `DWave.Neal.Optimizer` now accepts and forwards explicit `initial_states`
+  (`initial_states_generator`, `seed`, and `beta_schedule_options`) for
+  warm-started simulated annealing runs (#75, #89).
+- `DWave.Neal.Optimizer` now implements `MOI.TimeLimitSec()` via a truthful
+  between-read Python interrupt callback contract: when the configured
+  wall-clock budget expires between completed reads, `DWave.Neal` halts
+  further reads, preserves all completed incumbent samples, and reports
+  `MOI.TIME_LIMIT` (#76, #90).
+
+### Citation metadata
+
+- Updated the exact-version Zenodo software citation reference in `README.md`
+  and `test/citation.jl` to the verified `v0.8.1` Zenodo archive
+  (`10.5281/zenodo.23603558`) (#88).
+
 ## 0.8.1 — 2026-10-23
 
 This patch release defers D-Wave Leap cloud authentication until cloud solve

@@ -20,8 +20,8 @@ abstract: >-
   distributed with the D-Wave Ocean SDK.
 repository-code: "https://github.com/JuliaQUBO/DWave.jl"
 license: MIT
-version: "0.8.1"
-date-released: 2026-10-23
+version: "0.8.2"
+date-released: 2026-10-25
 doi: "10.5281/zenodo.7812066"
 keywords:
   - Julia
