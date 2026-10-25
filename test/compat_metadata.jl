@@ -39,6 +39,33 @@ Test.@testset "QUBODrivers 0.6 capability traits are declared" begin
     Test.@test !QUBODrivers.enforces_time_limit(DWave.Greedy.Optimizer)
     Test.@test QUBODrivers.enforces_time_limit(DWave.Random.Optimizer)
     Test.@test !QUBODrivers.enforces_time_limit(DWave.Tabu.Optimizer)
+
+    Test.@test !CompatMOI.supports(DWave.Optimizer(), CompatMOI.TimeLimitSec())
+    Test.@test CompatMOI.supports(DWave.Neal.Optimizer(), CompatMOI.TimeLimitSec())
+    Test.@test !CompatMOI.supports(DWave.Greedy.Optimizer(), CompatMOI.TimeLimitSec())
+    Test.@test CompatMOI.supports(DWave.Random.Optimizer(), CompatMOI.TimeLimitSec())
+    Test.@test !CompatMOI.supports(DWave.Tabu.Optimizer(), CompatMOI.TimeLimitSec())
+end
+
+Test.@testset "Neal TimeLimitSec attribute support and validation" begin
+    model = CompatMOI.instantiate(DWave.Neal.Optimizer; with_bridge_type = Float64)
+
+    Test.@test CompatMOI.supports(model, CompatMOI.TimeLimitSec())
+    Test.@test isnothing(CompatMOI.get(model, CompatMOI.TimeLimitSec()))
+
+    CompatMOI.set(model, CompatMOI.TimeLimitSec(), 0)
+    Test.@test CompatMOI.get(model, CompatMOI.TimeLimitSec()) === 0.0
+
+    CompatMOI.set(model, CompatMOI.TimeLimitSec(), 1.25)
+    Test.@test CompatMOI.get(model, CompatMOI.TimeLimitSec()) === 1.25
+
+    CompatMOI.set(model, CompatMOI.TimeLimitSec(), nothing)
+    Test.@test isnothing(CompatMOI.get(model, CompatMOI.TimeLimitSec()))
+
+    for bad_limit in (-0.1, NaN, Inf, -Inf, true)
+        Test.@test_throws ArgumentError CompatMOI.set(model, CompatMOI.TimeLimitSec(), bad_limit)
+    end
+    Test.@test_throws Exception CompatMOI.set(model, CompatMOI.TimeLimitSec(), "1.0")
 end
 
 Test.@testset "RandomSeed aliases existing seed attributes" begin

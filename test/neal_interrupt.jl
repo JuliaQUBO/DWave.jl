@@ -204,3 +204,137 @@ Test.@testset "Neal native callback path and solve isolation" begin
     Test.@test MOI.get(raw, MOI.RawStatusString()) == ""
     Test.@test MOI.get(raw, MOI.ResultCount()) == 0
 end
+
+function _with_neal_clock(f::Function, step_ns::UInt64)
+    original_clock = DWave.Neal._TIME_LIMIT_CLOCK[]
+    current_ns = Ref{UInt64}(UInt64(1_000_000_000))
+    calls = Ref(0)
+    DWave.Neal._TIME_LIMIT_CLOCK[] = function ()
+        calls[] += 1
+        # The first call records sample_start_ns; each subsequent call inside
+        # deadline_check advances the synthetic monotonic clock by step_ns.
+        if calls[] > 1
+            current_ns[] += step_ns
+        end
+        return current_ns[]
+    end
+    try
+        return f()
+    finally
+        DWave.Neal._TIME_LIMIT_CLOCK[] = original_clock
+    end
+end
+
+Test.@testset "Neal deterministic TimeLimitSec and callback composition" begin
+    h = [0.5, -0.25]
+    J = [0.0 -1.0; 0.0 0.0]
+
+    for (occurrences, time_limit, step_sec, callback, expected_status, reason, expected_interrupt, expected_timeout) in (
+        # Unset time limit
+        ([4, 3], nothing, 0.5, nothing, MOI.LOCALLY_SOLVED, "completed", false, false),
+        # Generous time limit not exceeded
+        ([4, 3], 10.0, 0.5, nothing, MOI.LOCALLY_SOLVED, "completed", false, false),
+        # Zero time limit triggers immediately on first between-read check
+        ([1], 0.0, 0.0, nothing, MOI.TIME_LIMIT, "time_limit", false, true),
+        # Positive time limit exceeded on between-read check
+        ([1], 0.5, 0.75, nothing, MOI.TIME_LIMIT, "time_limit", false, true),
+        # Time limit exceeded on final allotted read still reports TIME_LIMIT
+        ([4, 3], 0.5, 0.75, nothing, MOI.TIME_LIMIT, "time_limit", false, true),
+        # User callback triggers before deadline
+        ([1], 10.0, 0.25, () -> true, MOI.INTERRUPTED, "interrupt_callback", true, false),
+        # User callback returns false while deadline triggers
+        ([1], 0.5, 0.75, () -> false, MOI.TIME_LIMIT, "time_limit", false, true),
+        # Both user callback and deadline trigger on the same read
+        ([1], 0.0, 0.0, () -> true, MOI.INTERRUPTED, "interrupt_callback", true, true),
+    )
+        _with_neal_clock(round(UInt64, step_sec * 1.0e9)) do
+            _with_mock_neal(; occurrences) do
+                user_calls = Ref(0)
+                wrapped_cb = isnothing(callback) ? nothing : () -> (user_calls[] += 1; callback())
+                model, variables = _wrapper_neal_model(
+                    h,
+                    J;
+                    num_reads = 11,
+                    interrupt_function = wrapped_cb,
+                )
+                MOI.set(model, QUBODrivers.FinalNumberOfReads(), 7)
+                MOI.set(model, MOI.TimeLimitSec(), time_limit)
+                MOI.optimize!(model)
+
+                metadata = _neal_metadata(model)
+                Test.@test isempty(QUBODrivers.validate_metadata(metadata))
+                Test.@test metadata["time"]["conversion"] >= 0.0
+                Test.@test metadata["termination"]["granularity"] == "completed_read"
+                Test.@test metadata["termination"]["time_limit_sec"] === time_limit
+                Test.@test metadata["termination"]["interrupt_requested"] == expected_interrupt
+                Test.@test metadata["termination"]["time_limit_exceeded"] == expected_timeout
+                Test.@test !metadata["termination"]["interrupt_callback_error"]
+                Test.@test metadata["termination"]["reason"] == reason
+                Test.@test metadata["termination_status"] == expected_status
+                Test.@test MOI.get(model, MOI.TerminationStatus()) == expected_status
+                Test.@test MOI.get(model, MOI.RawStatusString()) ==
+                    (expected_status == MOI.LOCALLY_SOLVED ? "locally_solved" : reason)
+                if !isnothing(callback)
+                    Test.@test user_calls[] == 1
+                end
+                _assert_neal_incumbents(model, variables, h, J)
+            end
+        end
+    end
+end
+
+Test.@testset "Neal native between-read TimeLimitSec granularity and timing boundaries" begin
+    h = [0.5, -0.25]
+    J = [0.0 -1.0; 0.0 0.0]
+    user_calls = Ref(0)
+    model, variables = _wrapper_neal_model(
+        h,
+        J;
+        num_reads = 9,
+        num_sweeps = 10,
+        seed = 77,
+        interrupt_function = () -> (user_calls[] += 1; false),
+    )
+    MOI.set(model, QUBODrivers.FinalNumberOfReads(), 6)
+    MOI.set(model, MOI.TimeLimitSec(), 0.0)
+    MOI.optimize!(model)
+
+    metadata = _neal_metadata(model)
+    Test.@test isempty(QUBODrivers.validate_metadata(metadata))
+    # Native Neal checks interruption between completed reads: a 0.0s limit stops
+    # immediately after read 1 completes, preserving that read as a valid incumbent.
+    Test.@test user_calls[] == 1
+    Test.@test metadata["reads"]["number_of_reads"] == 9
+    Test.@test metadata["reads"]["final_number_of_reads"] == 6
+    Test.@test metadata["reads"]["completed_number_of_reads"] == 1
+    Test.@test metadata["optimizer"]["evaluations"] == 1
+    Test.@test MOI.get(model, MOI.TerminationStatus()) == MOI.TIME_LIMIT
+    Test.@test MOI.get(model, MOI.RawStatusString()) == "time_limit"
+    Test.@test metadata["termination"]["reason"] == "time_limit"
+    Test.@test metadata["termination"]["time_limit_exceeded"]
+    Test.@test !metadata["termination"]["interrupt_requested"]
+    Test.@test !metadata["termination"]["interrupt_callback_error"]
+    Test.@test metadata["termination"]["time_limit_sec"] === 0.0
+    Test.@test metadata["termination"]["granularity"] == "completed_read"
+    Test.@test metadata["time"]["conversion"] >= 0.0
+    Test.@test metadata["time"]["effective"] > 0.0
+    Test.@test metadata["time"]["total"] >= metadata["time"]["effective"]
+    Test.@test haskey(metadata["dwave_info"], "timing")
+    Test.@test haskey(metadata["dwave_info"]["timing"], "preprocessing_ns")
+    Test.@test haskey(metadata["dwave_info"]["timing"], "sampling_ns")
+    Test.@test haskey(metadata["dwave_info"]["timing"], "postprocessing_ns")
+    _assert_neal_incumbents(model, variables, h, J)
+
+    # Clearing TimeLimitSec restores full read completion on subsequent solves.
+    user_calls[] = 0
+    MOI.set(model, MOI.TimeLimitSec(), nothing)
+    MOI.optimize!(model)
+    metadata_after = _neal_metadata(model)
+    Test.@test user_calls[] == 6
+    Test.@test metadata_after["reads"]["completed_number_of_reads"] == 6
+    Test.@test MOI.get(model, MOI.TerminationStatus()) == MOI.LOCALLY_SOLVED
+    Test.@test MOI.get(model, MOI.RawStatusString()) == "locally_solved"
+    Test.@test !metadata_after["termination"]["time_limit_exceeded"]
+    Test.@test isnothing(metadata_after["termination"]["time_limit_sec"])
+    _assert_neal_incumbents(model, variables, h, J)
+end
