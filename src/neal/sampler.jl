@@ -48,6 +48,7 @@ QUBODrivers.@setup Optimizer begin
         "beta_schedule"::Union{Vector,Nothing} = nothing
         "beta_schedule_type"::String = "geometric"
         RandomSeed["seed"]::Union{Integer,Nothing} = nothing
+        "initial_states"::Any = nothing
         "initial_states_generator"::String = "random"
         "interrupt_function"::Union{Function,Nothing} = nothing
     end
@@ -165,6 +166,11 @@ function QUBODrivers.sample(sampler::Optimizer{T}) where {T}
     num_reads = MOI.get(sampler, MOI.RawOptimizerAttribute("num_reads"))
     final_num_reads = MOI.get(sampler, QUBODrivers.FinalNumberOfReads())
     seed = MOI.get(sampler, QUBODrivers.RandomSeed())
+    initial_states = DWave._normalize_initial_states(
+        n,
+        MOI.get(sampler, MOI.RawOptimizerAttribute("initial_states"));
+        domain = QUBOTools.domain(sampler),
+    )
     interrupt_function = MOI.get(sampler, MOI.RawOptimizerAttribute("interrupt_function"))
     tracked = isnothing(interrupt_function) ? nothing : _tracked_interrupt_function(interrupt_function)
     params = Dict{Symbol,Any}(
@@ -175,6 +181,7 @@ function QUBODrivers.sample(sampler::Optimizer{T}) where {T}
         :beta_schedule => MOI.get(sampler, MOI.RawOptimizerAttribute("beta_schedule")),
         :beta_schedule_type => MOI.get(sampler, MOI.RawOptimizerAttribute("beta_schedule_type")),
         :seed => seed,
+        :initial_states => initial_states,
         :initial_states_generator => MOI.get(
             sampler,
             MOI.RawOptimizerAttribute("initial_states_generator"),

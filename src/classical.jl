@@ -230,7 +230,43 @@ function _init_dwave_samplers_target!(
     return nothing
 end
 
-function _normalize_initial_states(n::Int, initial_states)
+function _normalize_initial_state_domain(domain)
+    if domain === QUBOTools.BoolDomain || domain === :bool
+        return :bool
+    elseif domain === QUBOTools.SpinDomain || domain === :spin
+        return :spin
+    else
+        throw(ArgumentError("Unsupported domain `$domain` for `initial_states`"))
+    end
+end
+
+function _normalize_initial_state_value(value, domain::Symbol)
+    if domain === :bool
+        if value isa Real && isfinite(value) && isinteger(value)
+            ival = Int(value)
+            ival in (0, 1) && return 2 * ival - 1
+        end
+        throw(
+            ArgumentError(
+                "Invalid `initial_states` entry `$value` for `:bool` domain; expected 0 or 1",
+            ),
+        )
+    else
+        if !(value isa Bool) && value isa Real && isfinite(value) && isinteger(value)
+            ival = Int(value)
+            ival in (-1, 1) && return ival
+        end
+        throw(
+            ArgumentError(
+                "Invalid `initial_states` entry `$value` for `:spin` domain; expected -1 or 1",
+            ),
+        )
+    end
+end
+
+function _normalize_initial_states(n::Int, initial_states; domain = :spin)
+    domain_sym = _normalize_initial_state_domain(domain)
+
     if initial_states === nothing || initial_states isa PythonCall.Py
         return initial_states
     elseif initial_states isa AbstractVector
@@ -238,17 +274,36 @@ function _normalize_initial_states(n::Int, initial_states)
             ArgumentError("`initial_states` must have length $n, got $(length(initial_states))"),
         )
 
-        return Py((reshape(Int.(collect(initial_states)), 1, n), collect(0:(n - 1))))
+        states = Matrix{Int}(undef, 1, n)
+        for j in 1:n
+            states[1, j] = _normalize_initial_state_value(initial_states[j], domain_sym)
+        end
+
+        return Py((states, collect(0:(n - 1))))
     elseif initial_states isa AbstractMatrix
+        size(initial_states, 1) >= 1 || throw(
+            ArgumentError("`initial_states` must have at least 1 row, got $(size(initial_states, 1))"),
+        )
         size(initial_states, 2) == n || throw(
             ArgumentError(
                 "`initial_states` must have $n columns, got $(size(initial_states, 2))",
             ),
         )
 
-        return Py((Int.(Matrix(initial_states)), collect(0:(n - 1))))
+        nrows = size(initial_states, 1)
+        states = Matrix{Int}(undef, nrows, n)
+        for i in 1:nrows, j in 1:n
+            states[i, j] = _normalize_initial_state_value(initial_states[i, j], domain_sym)
+        end
+
+        return Py((states, collect(0:(n - 1))))
     else
-        return Py(initial_states)
+        throw(
+            ArgumentError(
+                "`initial_states` must be `nothing`, an `AbstractVector` of length $n, " *
+                "or an `AbstractMatrix` with $n columns, got $(typeof(initial_states))",
+            ),
+        )
     end
 end
 

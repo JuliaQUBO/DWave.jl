@@ -401,3 +401,32 @@ Test.@testset "Tabu wrapper forwards initial states" begin
 
     Test.@test wrapper_records == direct_records
 end
+
+Test.@testset "Greedy and Tabu wrappers normalize :bool initial_states and validate inputs" begin
+    for optimizer in (DWave.Greedy.Optimizer, DWave.Tabu.Optimizer)
+        model = MOI.instantiate(optimizer; with_bridge_type = Float64)
+        x, _ = MOI.add_constrained_variables(model, fill(MOI.ZeroOne(), 3))
+        MOI.set(model, MOI.ObjectiveSense(), MOI.MIN_SENSE)
+        MOI.set(
+            model,
+            MOI.ObjectiveFunction{MOI.ScalarQuadraticFunction{Float64}}(),
+            MOI.ScalarQuadraticFunction{Float64}(
+                [MOI.ScalarQuadraticTerm{Float64}(-1.0, x[1], x[2])],
+                [MOI.ScalarAffineTerm{Float64}(-0.5, x[1])],
+                0.0,
+            ),
+        )
+        MOI.set(model, MOI.RawOptimizerAttribute("num_reads"), 2)
+        MOI.set(model, MOI.RawOptimizerAttribute("initial_states"), [1 1 0; 0 1 1])
+        MOI.set(model, MOI.RawOptimizerAttribute("initial_states_generator"), "none")
+        if optimizer === DWave.Tabu.Optimizer
+            MOI.set(model, MOI.RawOptimizerAttribute("timeout"), nothing)
+            MOI.set(model, MOI.RawOptimizerAttribute("num_restarts"), 0)
+        end
+        MOI.optimize!(model)
+        Test.@test MOI.get(model, MOI.ResultCount()) >= 1
+
+        MOI.set(model, MOI.RawOptimizerAttribute("initial_states"), [-1, 1, 1])
+        Test.@test_throws ArgumentError MOI.optimize!(model)
+    end
+end

@@ -453,3 +453,336 @@ Test.@testset "Neal metadata includes solver info" begin
     Test.@test length(info["beta_range"]) == 2
     Test.@test info["timing"] isa Dict
 end
+
+function _wrapper_neal_qubo_model(
+    linear::Vector{Float64},
+    edges::Vector{Tuple{Int,Int}},
+    quadratic::Vector{Float64},
+    n::Int;
+    domain::Symbol = :bool,
+    sense::Symbol = :min,
+    offset::Float64 = 0.0,
+    kwargs...,
+)
+    model = MOI.instantiate(DWave.Neal.Optimizer; with_bridge_type = Float64)
+    set = domain === :bool ? MOI.ZeroOne() : QUBODrivers.Spin()
+    x, _ = MOI.add_constrained_variables(model, fill(set, n))
+
+    MOI.set(model, MOI.ObjectiveSense(), sense === :min ? MOI.MIN_SENSE : MOI.MAX_SENSE)
+    MOI.set(
+        model,
+        MOI.ObjectiveFunction{MOI.ScalarQuadraticFunction{Float64}}(),
+        MOI.ScalarQuadraticFunction{Float64}(
+            MOI.ScalarQuadraticTerm{Float64}[
+                MOI.ScalarQuadraticTerm{Float64}(quadratic[k], x[i], x[j])
+                for (k, (i, j)) in enumerate(edges)
+            ],
+            MOI.ScalarAffineTerm{Float64}[
+                MOI.ScalarAffineTerm{Float64}(linear[i], x[i]) for i in eachindex(linear)
+            ],
+            offset,
+        ),
+    )
+
+    for (name, value) in pairs(kwargs)
+        MOI.set(model, MOI.RawOptimizerAttribute(String(name)), value)
+    end
+
+    return model, x
+end
+
+Test.@testset "Neal wrapper forwards initial_states across domains, shapes, and isolated variables" begin
+    # Variable 4 is isolated (zero linear and quadratic bias).
+    linear = [0.5, -0.75, 0.25]
+    edges = [(1, 2), (2, 3)]
+    quadratic = [1.0, -0.5]
+    n = 4
+    offset = 1.25
+    energy_fn = x -> sum(linear[i] * x[i] for i in eachindex(linear)) +
+        sum(quadratic[k] * x[i] * x[j] for (k, (i, j)) in enumerate(edges)) + offset
+
+    # Single-vector initial_states in :bool (including all-1 state that would
+    # otherwise be ambiguous between SPIN and BINARY in dimod's infer_vartype)
+    for init_vec in ([1, 1, 1, 1], [0, 1, 0, 1], [1, 0, 1, 0])
+        model, x = _wrapper_neal_qubo_model(
+            linear,
+            edges,
+            quadratic,
+            n;
+            domain = :bool,
+            offset = offset,
+            num_reads = 1,
+            num_sweeps = 0,
+            initial_states = init_vec,
+            initial_states_generator = "none",
+        )
+        MOI.optimize!(model)
+        Test.@test MOI.get(model, MOI.TerminationStatus()) == MOI.LOCALLY_SOLVED
+        Test.@test MOI.get(model, MOI.ResultCount()) == 1
+        state = [Int(round(MOI.get(model, MOI.VariablePrimal(1), v))) for v in x]
+        Test.@test state == init_vec
+        Test.@test MOI.get(model, MOI.ObjectiveValue(1)) ≈ energy_fn(init_vec) atol = 1e-14
+    end
+
+    # Single-vector initial_states in :spin (preserving isolated variable 4)
+    for init_vec in ([1, 1, 1, 1], [-1, 1, -1, 1], [1, -1, 1, -1])
+        model, s = _wrapper_neal_qubo_model(
+            linear,
+            edges,
+            quadratic,
+            n;
+            domain = :spin,
+            offset = offset,
+            num_reads = 1,
+            num_sweeps = 0,
+            initial_states = init_vec,
+            initial_states_generator = "none",
+        )
+        MOI.optimize!(model)
+        Test.@test MOI.get(model, MOI.TerminationStatus()) == MOI.LOCALLY_SOLVED
+        Test.@test MOI.get(model, MOI.ResultCount()) == 1
+        state = [Int(round(MOI.get(model, MOI.VariablePrimal(1), v))) for v in s]
+        Test.@test state == init_vec
+        Test.@test MOI.get(model, MOI.ObjectiveValue(1)) ≈ energy_fn(init_vec) atol = 1e-14
+    end
+
+    # Multi-row matrix initial_states in :bool and :spin
+    bool_batch = [
+        0 1 0 1
+        1 0 1 0
+        1 1 1 1
+    ]
+    model_bool, x_bool = _wrapper_neal_qubo_model(
+        linear,
+        edges,
+        quadratic,
+        n;
+        domain = :bool,
+        offset = offset,
+        num_reads = 3,
+        num_sweeps = 0,
+        initial_states = bool_batch,
+        initial_states_generator = "none",
+    )
+    MOI.optimize!(model_bool)
+    Test.@test MOI.get(model_bool, MOI.ResultCount()) == 3
+    returned_bool = Set(
+        Tuple(Int(round(MOI.get(model_bool, MOI.VariablePrimal(i), v))) for v in x_bool)
+        for i in 1:MOI.get(model_bool, MOI.ResultCount())
+    )
+    expected_bool = Set(Tuple(bool_batch[row, :]) for row in 1:size(bool_batch, 1))
+    Test.@test returned_bool == expected_bool
+
+    # Direct parity with dwave.samplers.SimulatedAnnealingSampler for nonzero sweeps
+    h = [0.25, -0.5, 0.75, 0.0]
+    J = zeros(Float64, 4, 4)
+    J[1, 2] = -1.0
+    J[2, 3] = 0.5
+    spin_batch = [
+         1 -1  1 -1
+        -1  1 -1  1
+         1  1 -1  1
+    ]
+    kwargs = (
+        initial_states = spin_batch,
+        initial_states_generator = "tile",
+        num_reads = 8,
+        num_sweeps = 25,
+        beta_schedule_type = "geometric",
+        seed = 202_604_15,
+    )
+    direct_records = _aggregate_records(
+        _direct_neal_records(
+            h,
+            J;
+            initial_states = DWave.Neal.PythonCall.Py((spin_batch, collect(0:3))),
+            initial_states_generator = kwargs.initial_states_generator,
+            num_reads = kwargs.num_reads,
+            num_sweeps = kwargs.num_sweeps,
+            beta_schedule_type = kwargs.beta_schedule_type,
+            seed = kwargs.seed,
+        ),
+    )
+    wrapper_records = _aggregate_records(_wrapper_neal_records(h, J; kwargs...))
+    Test.@test wrapper_records == direct_records
+end
+
+Test.@testset "Neal initial_states generator, seed, and FinalNumberOfReads semantics" begin
+    h = [0.5, -0.25, 0.75, 0.0]
+    J = zeros(Float64, 4, 4)
+    J[1, 2] = -0.5
+    J[2, 3] = 0.25
+    batch_two = [
+         1 -1  1 -1
+        -1  1 -1  1
+    ]
+
+    # 1. M < final_num_reads with generator = "none" raises a Python ValueError
+    model_none, _ = _wrapper_neal_model(
+        h,
+        J;
+        num_reads = 6,
+        num_sweeps = 0,
+        initial_states = batch_two,
+        initial_states_generator = "none",
+    )
+    MOI.set(model_none, QUBODrivers.FinalNumberOfReads(), 5)
+    err = try
+        MOI.optimize!(model_none)
+        nothing
+    catch caught
+        caught
+    end
+    Test.@test err isa NealPyException
+    Test.@test occursin("insufficient number of initial states given", sprint(showerror, err))
+
+    # 2. M < final_num_reads with generator = "tile" repeats states cyclically to final_num_reads
+    model_tile, s_tile = _wrapper_neal_model(
+        h,
+        J;
+        num_reads = 9,
+        num_sweeps = 0,
+        initial_states = batch_two,
+        initial_states_generator = "tile",
+    )
+    MOI.set(model_tile, QUBODrivers.FinalNumberOfReads(), 5)
+    MOI.optimize!(model_tile)
+    QUBOTools_MOI = Base.get_extension(QUBOTools, :QUBOTools_MOI)
+    counts_tile = Dict(
+        Tuple(Int(round(MOI.get(model_tile, MOI.VariablePrimal(i), v))) for v in s_tile) =>
+            MOI.get(model_tile, QUBOTools_MOI.NumberOfReads(i))
+        for i in 1:MOI.get(model_tile, MOI.ResultCount())
+    )
+    Test.@test counts_tile[Tuple(batch_two[1, :])] == 3
+    Test.@test counts_tile[Tuple(batch_two[2, :])] == 2
+    metadata_tile = QUBOTools.metadata(QUBOTools.solution(MOI.get(model_tile, MOI.RawSolver())))
+    Test.@test metadata_tile["reads"]["number_of_reads"] == 9
+    Test.@test metadata_tile["reads"]["final_number_of_reads"] == 5
+    Test.@test metadata_tile["reads"]["completed_number_of_reads"] == 5
+
+    # 3. M < final_num_reads with generator = "random" pads remaining reads deterministically with seed
+    model_rand_a, s_rand_a = _wrapper_neal_model(
+        h,
+        J;
+        num_reads = 9,
+        num_sweeps = 0,
+        initial_states = batch_two,
+        initial_states_generator = "random",
+        seed = 867_5309,
+    )
+    MOI.set(model_rand_a, QUBODrivers.FinalNumberOfReads(), 5)
+    MOI.optimize!(model_rand_a)
+
+    model_rand_b, s_rand_b = _wrapper_neal_model(
+        h,
+        J;
+        num_reads = 9,
+        num_sweeps = 0,
+        initial_states = batch_two,
+        initial_states_generator = "random",
+        seed = 867_5309,
+    )
+    MOI.set(model_rand_b, QUBODrivers.FinalNumberOfReads(), 5)
+    MOI.optimize!(model_rand_b)
+
+    counts_rand_a = Dict(
+        Tuple(Int(round(MOI.get(model_rand_a, MOI.VariablePrimal(i), v))) for v in s_rand_a) =>
+            MOI.get(model_rand_a, QUBOTools_MOI.NumberOfReads(i))
+        for i in 1:MOI.get(model_rand_a, MOI.ResultCount())
+    )
+    counts_rand_b = Dict(
+        Tuple(Int(round(MOI.get(model_rand_b, MOI.VariablePrimal(i), v))) for v in s_rand_b) =>
+            MOI.get(model_rand_b, QUBOTools_MOI.NumberOfReads(i))
+        for i in 1:MOI.get(model_rand_b, MOI.ResultCount())
+    )
+    Test.@test counts_rand_a == counts_rand_b
+    Test.@test sum(values(counts_rand_a)) == 5
+    Test.@test get(counts_rand_a, Tuple(batch_two[1, :]), 0) >= 1
+    Test.@test get(counts_rand_a, Tuple(batch_two[2, :]), 0) >= 1
+
+    # 4. M > final_num_reads truncates to the first final_num_reads states across all generators
+    batch_three = [
+         1 -1  1 -1
+        -1  1 -1  1
+         1  1 -1  1
+    ]
+    for gen in ("none", "tile", "random")
+        model_trunc, s_trunc = _wrapper_neal_model(
+            h,
+            J;
+            num_reads = 6,
+            num_sweeps = 0,
+            initial_states = batch_three,
+            initial_states_generator = gen,
+            seed = 42,
+        )
+        MOI.set(model_trunc, QUBODrivers.FinalNumberOfReads(), 2)
+        MOI.optimize!(model_trunc)
+        counts_trunc = Dict(
+            Tuple(Int(round(MOI.get(model_trunc, MOI.VariablePrimal(i), v))) for v in s_trunc) =>
+                MOI.get(model_trunc, QUBOTools_MOI.NumberOfReads(i))
+            for i in 1:MOI.get(model_trunc, MOI.ResultCount())
+        )
+        Test.@test counts_trunc == Dict(
+            Tuple(batch_three[1, :]) => 1,
+            Tuple(batch_three[2, :]) => 1,
+        )
+    end
+end
+
+Test.@testset "Neal initial_states validation errors" begin
+    linear = [0.5, -0.75, 0.25]
+    edges = [(1, 2), (2, 3)]
+    quadratic = [1.0, -0.5]
+    n = 4
+
+    for bad_states in (
+        [1, 0, 1],
+        [1, 0, 1, 0, 1],
+        zeros(Int, 0, 4),
+        ones(Int, 2, 3),
+        "invalid",
+        123,
+        [-1, 0, 1, 0],
+        [2, 0, 1, 0],
+        [0.5, 0.0, 1.0, 0.0],
+        [NaN, 0.0, 1.0, 0.0],
+    )
+        model, _ = _wrapper_neal_qubo_model(
+            linear,
+            edges,
+            quadratic,
+            n;
+            domain = :bool,
+            num_reads = 2,
+            num_sweeps = 1,
+            initial_states = bad_states,
+        )
+        Test.@test_throws ArgumentError MOI.optimize!(model)
+    end
+
+    for bad_states in (
+        [1, -1, 1],
+        [1, -1, 1, -1, 1],
+        zeros(Int, 0, 4),
+        ones(Int, 2, 5),
+        (1, -1, 1, -1),
+        [0, 1, -1, 1],
+        [2, 1, -1, 1],
+        [true, false, true, false],
+        [0.5, 1.0, -1.0, 1.0],
+        [Inf, 1.0, -1.0, 1.0],
+    )
+        model, _ = _wrapper_neal_qubo_model(
+            linear,
+            edges,
+            quadratic,
+            n;
+            domain = :spin,
+            num_reads = 2,
+            num_sweeps = 1,
+            initial_states = bad_states,
+        )
+        Test.@test_throws ArgumentError MOI.optimize!(model)
+    end
+end
