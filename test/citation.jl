@@ -23,7 +23,7 @@ Test.@testset "Citation metadata is consistent" begin
     workflow = read_text(joinpath(CITATION_PACKAGE_ROOT, ".github", "workflows", "zenodo.yml"))
 
     concept_doi = "10.5281/zenodo.7812066"
-    version_doi = "10.5281/zenodo.23603558"
+    version_doi = "10.5281/zenodo.23652877"
     article_doi = "10.1080/10556788.2026.2702926"
     version = string(project["version"])
 
@@ -41,6 +41,8 @@ Test.@testset "Citation metadata is consistent" begin
     Test.@test occursin("Zenodo release verification", checklist)
     Test.@test occursin(r"(?m)^\s*release:\s*$", workflow)
     Test.@test occursin(r"(?m)^\s*-\s*published\s*$", workflow)
+    Test.@test occursin(r"(?m)^\s*workflow_run:\s*$", workflow)
+    Test.@test occursin("TagBot", workflow)
     Test.@test occursin("scripts/verify_zenodo_release.jl", workflow)
 end
 

@@ -287,8 +287,8 @@ the evergreen software identifier and resolves to the latest archived release.
 For general discussion of the JuliaQUBO ecosystem, cite the
 [QUBO.jl ecosystem article](https://doi.org/10.1080/10556788.2026.2702926).
 When exact-release reproducibility matters, cite the corresponding Zenodo
-version DOI instead; the archive for `v0.8.1` is
-[10.5281/zenodo.23603558](https://doi.org/10.5281/zenodo.23603558).
+version DOI instead; the archive for `v0.8.2` is
+[10.5281/zenodo.23652877](https://doi.org/10.5281/zenodo.23652877).
 
 ## Development Checks
 To verify that DWave can share a CondaPkg environment with the other
